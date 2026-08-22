@@ -17,6 +17,7 @@ Panel {
   property bool historyResetArmed: false
   property bool historyExportVisible: false
   property string historyExportText: ""
+  property string currentView: "daily"
 
   readonly property var barIdentity: hostWidget || root
   readonly property var state: service && service.ready
@@ -52,6 +53,12 @@ Panel {
         activeDays: 0
       })
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
+  readonly property color mutedForeground: Qt.rgba(
+    contentForeground.r,
+    contentForeground.g,
+    contentForeground.b,
+    0.62
+  )
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property var workdayRows: [
     { key: "mon", label: "Monday" },
@@ -88,6 +95,119 @@ Panel {
     if (service && service.busyContext)
       return "Ready to defer for " + service.busyContextReason + "."
     return "No busy context detected."
+  }
+
+  function smartTimingSummary() {
+    if (state.contextDeferred) return "Smart timing on · break waiting"
+    if (state.manualHoldRemainingSeconds > 0)
+      return "Smart timing held · " + formatRemaining(state.manualHoldRemainingSeconds) + " left"
+    if (!form.contextDeferralEnabled) return "Smart timing off"
+    if (service && service.busyContext)
+      return "Smart timing on · " + (service.busyContextReason || "busy context")
+    return "Smart timing on · no busy context"
+  }
+
+  function nextBreakKind() {
+    if (state.phase === "break" && state.breakKind) return state.breakKind
+    return Number(state.cycleIndex) >= Number(form.cyclesBeforeLong) - 1 ? "long" : "short"
+  }
+
+  function countdownCaption() {
+    if (state.phase === "stopped") return "ready when you are"
+    if (state.contextDeferred) return "break waiting for busy context"
+    if (state.phase === "break") return "left in your " + nextBreakKind() + " break"
+    if (state.phase === "warning") return "until your break starts"
+    if (state.phase === "deferred") return "until the deferred break"
+    if (state.phase === "outside") return state.endOfDayPromptPending
+      ? "workday complete" : "outside reminder hours"
+    return "until a " + nextBreakKind() + " break" + (state.phase === "paused" ? " · paused" : "")
+  }
+
+  function progressFraction() {
+    if (state.phase === "stopped") return 0
+    if (state.contextDeferred || state.phase === "warning" || state.phase === "deferred") return 1
+    if (state.phase === "break") {
+      var duration = nextBreakKind() === "long" ? form.longBreakSeconds : form.shortBreakSeconds
+      return duration > 0 ? Math.max(0, Math.min(1, 1 - state.remainingSeconds / duration)) : 0
+    }
+    var elapsed = Math.max(0, Number(state.activeElapsedSeconds) || 0)
+    var remaining = Math.max(0, Number(state.remainingSeconds) || 0)
+    return elapsed + remaining > 0 ? Math.max(0, Math.min(1, elapsed / (elapsed + remaining))) : 0
+  }
+
+  function minutesLabel(seconds) {
+    var value = Math.round((Number(seconds) || 0) / 60)
+    return String(value) + " min"
+  }
+
+  function presetLabel() {
+    var id = String(form.presetId || "custom")
+    return id.charAt(0).toUpperCase() + id.slice(1)
+  }
+
+  function rhythmSummary() {
+    return presetLabel() + " · " + minutesLabel(form.shortWorkIntervalSeconds) +
+      " focus · " + String(form.shortBreakSeconds) + " sec break"
+  }
+
+  function breakRotationSummary() {
+    var order = Array.isArray(form.routineOrder) ? form.routineOrder : []
+    var labels = []
+    var custom = Array.isArray(form.customBreakItems) ? form.customBreakItems : []
+    for (var i = 0; i < order.length; i++) {
+      var key = String(order[i])
+      var label = key.charAt(0).toUpperCase() + key.slice(1)
+      for (var c = 0; c < custom.length; c++)
+        if (custom[c].id === key) label = custom[c].label
+      labels.push(label)
+    }
+    return labels.join(", ")
+  }
+
+  function settingsSummary(view) {
+    if (view === "rhythm") return rhythmSummary()
+    if (view === "smart") {
+      if (!form.contextDeferralEnabled) return "Off"
+      var appCount = Settings.appIdList(form.busyAppIds).length
+      return appCount > 0 ? "On · fullscreen and selected apps" : "On · fullscreen and stay-awake"
+    }
+    if (view === "rotation") return breakRotationSummary()
+    if (view === "workday") return form.workdayHoursEnabled ? "Selected hours" : "Every day"
+    if (view === "history") return form.historyEnabled
+      ? String(form.historyWindowDays) + " days of local history" : "History off"
+    if (view === "behavior") return (form.autoStart ? "Start automatically" : "Start manually") +
+      " · " + (form.reducedMotion ? "reduced motion" : "motion on")
+    return ""
+  }
+
+  function viewTitle() {
+    if (currentView === "settings") return "Settings"
+    if (currentView === "rhythm") return "Rhythm"
+    if (currentView === "smart") return "Smart timing"
+    if (currentView === "rotation") return "Break rotation"
+    if (currentView === "workday") return "Workday"
+    if (currentView === "history") return "History & privacy"
+    if (currentView === "behavior") return "Behavior"
+    return "Intermission"
+  }
+
+  function showView(view) {
+    currentView = view
+    Qt.callLater(function() {
+      scroller.contentY = 0
+      if (view === "daily") focusInitialAction()
+      else if (backAction.visible) backAction.forceActiveFocus()
+    })
+  }
+
+  function goBack() {
+    showView(currentView === "settings" ? "daily" : "settings")
+  }
+
+  function resetDefaults() {
+    form = Settings.formFromSettings({})
+    dirty = true
+    saveMessage = "Defaults ready"
   }
 
   function addCurrentApp() {
@@ -258,6 +378,7 @@ Panel {
 
   function open() {
     refreshForm()
+    currentView = "daily"
     root.controller.show()
     Qt.callLater(root.focusInitialAction)
   }
@@ -273,6 +394,10 @@ Panel {
 
   function focusInitialAction() {
     if (!root.opened) return
+    if (root.currentView !== "daily") {
+      if (backAction.visible) backAction.forceActiveFocus()
+      return
+    }
     if (startAction.visible) startAction.forceActiveFocus()
     else if (resumeAction.visible) resumeAction.forceActiveFocus()
     else if (pauseAction.visible) pauseAction.forceActiveFocus()
@@ -330,18 +455,20 @@ Panel {
           width: scroller.width
           spacing: Style.space(14)
 
-          Item {
+          Column {
+            id: dailyView
+            visible: root.currentView === "daily"
             width: parent.width
-            implicitHeight: Math.max(statusLabels.implicitHeight, countdown.implicitHeight)
+            spacing: Style.space(18)
 
-            Column {
-              id: statusLabels
-              anchors.left: parent.left
-              anchors.right: countdown.left
-              anchors.rightMargin: Style.space(12)
-              spacing: Style.space(3)
+            Item {
+              width: parent.width
+              implicitHeight: Math.max(dailyTitle.implicitHeight, settingsAction.implicitHeight)
 
               Text {
+                id: dailyTitle
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
                 text: "Intermission"
                 color: root.contentForeground
                 font.family: root.contentFontFamily
@@ -349,153 +476,382 @@ Panel {
                 font.bold: true
               }
 
-              Text {
-                text: root.phaseLabel() + (root.service && root.service.isIdle ? " · away" : "") +
-                  (root.state.breakDebtSeconds > 0
-                    ? " · owed " + root.formatRemaining(root.state.breakDebtSeconds) : "")
-                color: root.contentForeground
-                font.family: root.contentFontFamily
-                font.pixelSize: Style.font.body
-                Accessible.role: Accessible.StaticText
-                Accessible.name: "Intermission status " + text
+              Button {
+                id: settingsAction
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                iconText: "󰒓"
+                tooltipText: "Settings"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                fontSize: Style.font.body
+                iconSize: Style.font.title
+                horizontalPadding: Style.space(8)
+                verticalPadding: Style.space(6)
+                focusable: true
+                Accessible.role: Accessible.Button
+                Accessible.name: root.dirty ? "Settings, unsaved changes" : "Settings"
+                Accessible.onPressAction: root.showView("settings")
+                onClicked: root.showView("settings")
               }
             }
 
-            Text {
-              id: countdown
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              text: root.state.phase === "stopped" ? "—"
-                : root.state.contextDeferred ||
-                  (root.state.phase === "outside" &&
-                    ["warning", "deferred"].indexOf(root.state.outsideResumePhase) !== -1)
-                ? "waiting"
-                : root.formatRemaining(root.state.remainingSeconds)
-              color: root.contentForeground
-              font.family: root.contentFontFamily
-              font.pixelSize: Style.font.displayLarge
-            }
-          }
+            Column {
+              width: parent.width
+              spacing: Style.space(5)
 
-          Row {
-            id: actionRow
-            width: parent.width
-            spacing: Style.space(6)
+              Text {
+                id: countdown
+                width: parent.width
+                text: root.state.phase === "stopped" ? "—"
+                  : root.state.contextDeferred ||
+                    (root.state.phase === "outside" &&
+                      ["warning", "deferred"].indexOf(root.state.outsideResumePhase) !== -1)
+                  ? "waiting"
+                  : root.formatRemaining(root.state.remainingSeconds)
+                color: root.contentForeground
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.displayLarge
+                font.bold: true
+                horizontalAlignment: Text.AlignHCenter
+                Accessible.role: Accessible.StaticText
+                Accessible.name: root.phaseLabel() + ", " + text
+              }
 
-            Button {
-              id: startAction
-              visible: root.state.phase === "stopped"
-              text: "Start"
-              iconText: "󰐊"
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              bordered: true
-              focusable: true
-              Accessible.role: Accessible.Button
-              Accessible.name: text
-              Accessible.description: "Start the break rhythm"
-              Accessible.onPressAction: if (enabled && root.service) root.service.start()
-              onClicked: if (root.service) root.service.start()
+              Text {
+                width: parent.width
+                text: root.countdownCaption()
+                color: root.mutedForeground
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.body
+                horizontalAlignment: Text.AlignHCenter
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
+              }
             }
 
-            Button {
-              id: pauseAction
-              visible: ["active", "idle", "warning", "deferred"].indexOf(root.state.phase) !== -1
-              text: "Pause"
-              iconText: "󰏤"
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              bordered: true
-              focusable: true
-              Accessible.role: Accessible.Button
-              Accessible.name: text
-              Accessible.description: "Pause active-use timing"
-              Accessible.onPressAction: if (enabled && root.service) root.service.pause()
-              onClicked: if (root.service) root.service.pause()
+            Rectangle {
+              width: parent.width
+              height: Style.space(3)
+              radius: height / 2
+              color: Qt.rgba(
+                root.contentForeground.r,
+                root.contentForeground.g,
+                root.contentForeground.b,
+                0.14
+              )
+
+              Rectangle {
+                width: parent.width * root.progressFraction()
+                height: parent.height
+                radius: parent.radius
+                color: Color.accent
+                Behavior on width {
+                  enabled: !root.form.reducedMotion
+                  NumberAnimation { duration: 160 }
+                }
+              }
             }
 
-            Button {
-              id: resumeAction
-              visible: root.state.phase === "paused"
-              text: "Resume"
-              iconText: "󰐊"
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              bordered: true
-              focusable: true
-              Accessible.role: Accessible.Button
-              Accessible.name: text
-              Accessible.description: "Resume active-use timing"
-              Accessible.onPressAction: if (enabled && root.service) root.service.resume()
-              onClicked: if (root.service) root.service.resume()
+            Row {
+              id: actionRow
+              width: parent.width
+              spacing: Style.space(8)
+              readonly property int visibleCount: startBreakAction.visible ? 2 : 1
+              readonly property real actionWidth: (width - spacing * (visibleCount - 1)) / visibleCount
+
+              Button {
+                id: startAction
+                visible: root.state.phase === "stopped"
+                width: actionRow.actionWidth
+                text: "Start"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                selected: true
+                bordered: true
+                focusable: true
+                Accessible.role: Accessible.Button
+                Accessible.name: text
+                Accessible.description: "Start the break rhythm"
+                Accessible.onPressAction: if (enabled && root.service) root.service.start()
+                onClicked: if (root.service) root.service.start()
+              }
+
+              Button {
+                id: pauseAction
+                visible: ["active", "idle", "warning", "deferred"].indexOf(root.state.phase) !== -1
+                width: actionRow.actionWidth
+                text: "Pause"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                selected: true
+                bordered: true
+                focusable: true
+                Accessible.role: Accessible.Button
+                Accessible.name: text
+                Accessible.description: "Pause active-use timing"
+                Accessible.onPressAction: if (enabled && root.service) root.service.pause()
+                onClicked: if (root.service) root.service.pause()
+              }
+
+              Button {
+                id: resumeAction
+                visible: root.state.phase === "paused"
+                width: actionRow.actionWidth
+                text: "Resume"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                selected: true
+                bordered: true
+                focusable: true
+                Accessible.role: Accessible.Button
+                Accessible.name: text
+                Accessible.description: "Resume active-use timing"
+                Accessible.onPressAction: if (enabled && root.service) root.service.resume()
+                onClicked: if (root.service) root.service.resume()
+              }
+
+              Button {
+                id: endBreakAction
+                visible: root.state.phase === "break"
+                width: actionRow.actionWidth
+                text: "End break"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                selected: true
+                bordered: true
+                focusable: true
+                Accessible.role: Accessible.Button
+                Accessible.name: text
+                Accessible.description: "Complete the current break"
+                Accessible.onPressAction: if (enabled && root.service) root.service.completeBreak("panel")
+                onClicked: if (root.service) root.service.completeBreak("panel")
+              }
+
+              Button {
+                id: startBreakAction
+                visible: ["active", "warning", "deferred", "outside"].indexOf(root.state.phase) !== -1
+                width: actionRow.actionWidth
+                text: root.state.phase === "active" ? "Take a break"
+                  : root.state.phase === "outside" ? "Take a break now" : "Start now"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                bordered: true
+                focusable: true
+                Accessible.role: Accessible.Button
+                Accessible.name: text
+                Accessible.description: "Begin the pending break now"
+                Accessible.onPressAction: if (enabled && root.service) root.service.startBreak()
+                onClicked: if (root.service) root.service.startBreak()
+              }
             }
 
-            Button {
-              id: startBreakAction
-              visible: ["active", "warning", "deferred", "outside"].indexOf(root.state.phase) !== -1
-              text: root.state.phase === "active" ? "Take a break"
-                : root.state.phase === "outside" ? "Take a break now" : "Start now"
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              bordered: true
-              focusable: true
-              Accessible.role: Accessible.Button
-              Accessible.name: text
-              Accessible.description: "Begin the pending break now"
-              Accessible.onPressAction: if (enabled && root.service) root.service.startBreak()
-              onClicked: if (root.service) root.service.startBreak()
-            }
-
-            Button {
-              visible: root.state.phase === "warning"
-              text: "Defer"
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              bordered: true
-              focusable: true
-              Accessible.role: Accessible.Button
-              Accessible.name: text
-              Accessible.description: "Postpone the pending break once"
-              Accessible.onPressAction: if (enabled && root.service) root.service.snooze()
-              onClicked: if (root.service) root.service.snooze()
-            }
-
-            Button {
+            Row {
               visible: root.state.phase === "warning" || root.state.phase === "deferred"
-              text: "Skip"
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              bordered: true
-              focusable: true
-              Accessible.role: Accessible.Button
-              Accessible.name: text
-              Accessible.description: "Skip the pending break and advance the cadence"
-              Accessible.onPressAction: if (enabled && root.service) root.service.skip("user")
-              onClicked: if (root.service) root.service.skip("user")
+              width: parent.width
+              spacing: Style.space(8)
+
+              Button {
+                visible: root.state.phase === "warning"
+                width: root.state.phase === "warning"
+                  ? (parent.width - parent.spacing) / 2 : parent.width
+                text: "Defer"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                bordered: true
+                focusable: true
+                Accessible.role: Accessible.Button
+                Accessible.name: text
+                Accessible.description: "Postpone the pending break once"
+                Accessible.onPressAction: if (enabled && root.service) root.service.snooze()
+                onClicked: if (root.service) root.service.snooze()
+              }
+
+              Button {
+                width: root.state.phase === "warning"
+                  ? (parent.width - parent.spacing) / 2 : parent.width
+                text: "Skip"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                bordered: true
+                focusable: true
+                Accessible.role: Accessible.Button
+                Accessible.name: text
+                Accessible.description: "Skip the pending break and advance the cadence"
+                Accessible.onPressAction: if (enabled && root.service) root.service.skip("user")
+                onClicked: if (root.service) root.service.skip("user")
+              }
             }
 
             Button {
-              id: endBreakAction
-              visible: root.state.phase === "break"
-              text: "End break"
+              visible: root.state.manualHoldRemainingSeconds > 0
+              width: parent.width
+              text: "End manual hold"
               foreground: root.contentForeground
               fontFamily: root.contentFontFamily
               bordered: true
               focusable: true
               Accessible.role: Accessible.Button
               Accessible.name: text
-              Accessible.description: "Complete the current break"
-              Accessible.onPressAction: if (enabled && root.service) root.service.completeBreak("panel")
-              onClicked: if (root.service) root.service.completeBreak("panel")
+              Accessible.description: "Return to automatic context timing now"
+              Accessible.onPressAction: if (enabled && root.service) root.service.clearReminderHold()
+              onClicked: if (root.service) root.service.clearReminderHold()
+            }
+
+            PanelSeparator { foreground: root.contentForeground }
+
+            Text {
+              width: parent.width
+              text: root.smartTimingSummary()
+              color: root.mutedForeground
+              font.family: root.contentFontFamily
+              font.pixelSize: Style.font.bodySmall
+              horizontalAlignment: Text.AlignHCenter
+              Accessible.role: Accessible.StaticText
+              Accessible.name: text
+            }
+
+            SettingsRow {
+              width: parent.width
+              rowTitle: root.presetLabel() + " rhythm"
+              rowSummary: ""
+              targetView: "rhythm"
             }
           }
 
-          PanelSeparator { foreground: root.contentForeground }
-          PanelSectionHeader {
-            text: "SMART TIMING"
-            foreground: root.contentForeground
-            fontFamily: root.contentFontFamily
+          Column {
+            id: settingsHeader
+            visible: root.currentView !== "daily"
+            width: parent.width
+            spacing: Style.space(12)
+
+            Item {
+              width: parent.width
+              implicitHeight: Math.max(backAction.implicitHeight, settingsTitle.implicitHeight, saveAction.implicitHeight)
+
+              Button {
+                id: backAction
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                iconText: "󰅁"
+                tooltipText: root.currentView === "settings" ? "Back to Intermission" : "Back to settings"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                iconSize: Style.font.title
+                horizontalPadding: Style.space(7)
+                verticalPadding: Style.space(6)
+                focusable: true
+                Accessible.role: Accessible.Button
+                Accessible.name: tooltipText
+                Accessible.onPressAction: root.goBack()
+                onClicked: root.goBack()
+              }
+
+              Text {
+                id: settingsTitle
+                anchors.left: backAction.right
+                anchors.leftMargin: Style.space(8)
+                anchors.right: saveAction.left
+                anchors.rightMargin: Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.viewTitle()
+                color: root.contentForeground
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+                elide: Text.ElideRight
+              }
+
+              Button {
+                id: saveAction
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.dirty ? "Save changes" : "Saved"
+                foreground: root.dirty ? root.contentForeground : root.mutedForeground
+                fontFamily: root.contentFontFamily
+                fontSize: Style.font.bodySmall
+                horizontalPadding: Style.space(8)
+                verticalPadding: Style.space(6)
+                bordered: root.dirty
+                focusable: root.dirty
+                enabled: root.dirty
+                opacity: enabled ? 1.0 : 0.82
+                Accessible.role: Accessible.Button
+                Accessible.name: text
+                Accessible.description: "Persist Intermission settings"
+                Accessible.onPressAction: if (enabled) root.saveSettings()
+                onClicked: if (enabled) root.saveSettings()
+              }
+            }
+
+            PanelSeparator { foreground: root.contentForeground }
           }
+
+          Column {
+            id: settingsIndex
+            visible: root.currentView === "settings"
+            width: parent.width
+            spacing: 0
+
+            SettingsRow {
+              width: parent.width
+              rowTitle: "Rhythm"
+              rowSummary: root.settingsSummary("rhythm")
+              targetView: "rhythm"
+            }
+            SettingsRow {
+              width: parent.width
+              rowTitle: "Smart timing"
+              rowSummary: root.settingsSummary("smart")
+              targetView: "smart"
+            }
+            SettingsRow {
+              width: parent.width
+              rowTitle: "Break rotation"
+              rowSummary: root.settingsSummary("rotation")
+              targetView: "rotation"
+            }
+            SettingsRow {
+              width: parent.width
+              rowTitle: "Workday"
+              rowSummary: root.settingsSummary("workday")
+              targetView: "workday"
+            }
+            SettingsRow {
+              width: parent.width
+              rowTitle: "History & privacy"
+              rowSummary: root.settingsSummary("history")
+              targetView: "history"
+            }
+            SettingsRow {
+              width: parent.width
+              rowTitle: "Behavior"
+              rowSummary: root.settingsSummary("behavior")
+              targetView: "behavior"
+            }
+
+            Button {
+              width: parent.width
+              topPadding: Style.space(14)
+              text: "Reset to defaults"
+              foreground: root.mutedForeground
+              fontFamily: root.contentFontFamily
+              fontSize: Style.font.bodySmall
+              leftAlign: true
+              focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Prepare default settings for review before saving"
+              Accessible.onPressAction: root.resetDefaults()
+              onClicked: root.resetDefaults()
+            }
+          }
+
+          Column {
+            id: smartSettings
+            visible: root.currentView === "smart"
+            width: parent.width
+            spacing: Style.space(14)
 
           Text {
             width: parent.width
@@ -619,11 +975,21 @@ Panel {
             }
           }
 
-          PanelSeparator { foreground: root.contentForeground }
-          PanelSectionHeader {
-            text: "BREAK ROTATION"
-            foreground: root.contentForeground
-            fontFamily: root.contentFontFamily
+          }
+
+          Column {
+            id: rotationSettings
+            visible: root.currentView === "rotation"
+            width: parent.width
+            spacing: Style.space(14)
+
+          Text {
+            width: parent.width
+            text: "Choose which calm prompts rotate through short and long breaks."
+            color: root.mutedForeground
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
           }
 
           Text {
@@ -711,12 +1077,13 @@ Panel {
             onClicked: root.addCustomRoutine()
           }
 
-          PanelSeparator { foreground: root.contentForeground }
-          PanelSectionHeader {
-            text: "RHYTHM"
-            foreground: root.contentForeground
-            fontFamily: root.contentFontFamily
           }
+
+          Column {
+            id: rhythmSettings
+            visible: root.currentView === "rhythm"
+            width: parent.width
+            spacing: Style.space(14)
 
           Text {
             width: parent.width
@@ -841,12 +1208,13 @@ Panel {
             }
           }
 
-          PanelSeparator { foreground: root.contentForeground }
-          PanelSectionHeader {
-            text: "WORKDAY"
-            foreground: root.contentForeground
-            fontFamily: root.contentFontFamily
           }
+
+          Column {
+            id: workdaySettings
+            visible: root.currentView === "workday"
+            width: parent.width
+            spacing: Style.space(14)
 
           Text {
             width: parent.width
@@ -1001,12 +1369,13 @@ Panel {
             }
           }
 
-          PanelSeparator { foreground: root.contentForeground }
-          PanelSectionHeader {
-            text: "INSIGHTS"
-            foreground: root.contentForeground
-            fontFamily: root.contentFontFamily
           }
+
+          Column {
+            id: historySettings
+            visible: root.currentView === "history"
+            width: parent.width
+            spacing: Style.space(14)
 
           Toggle {
             width: parent.width
@@ -1212,12 +1581,13 @@ Panel {
             Accessible.name: "JSON history export. Use select all and copy."
           }
 
-          PanelSeparator { foreground: root.contentForeground }
-          PanelSectionHeader {
-            text: "BEHAVIOR"
-            foreground: root.contentForeground
-            fontFamily: root.contentFontFamily
           }
+
+          Column {
+            id: behaviorSettings
+            visible: root.currentView === "behavior"
+            width: parent.width
+            spacing: Style.space(14)
 
           Toggle {
             width: parent.width
@@ -1253,39 +1623,95 @@ Panel {
             onClicked: root.setFormValue("reducedMotion", !root.form.reducedMotion)
           }
 
-          Row {
+          Text {
+            visible: root.saveMessage === "Save failed"
             width: parent.width
-            spacing: Style.space(8)
+            text: root.saveMessage
+            color: root.contentForeground
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
+          }
 
-            Button {
-              text: root.dirty ? "Save changes" : "Saved"
-              iconText: "󰆓"
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              bordered: true
-              focusable: true
-              enabled: root.dirty
-              opacity: enabled ? 1.0 : 0.55
-              Accessible.role: Accessible.Button
-              Accessible.name: text
-              Accessible.description: "Persist Intermission settings"
-              Accessible.onPressAction: if (enabled) root.saveSettings()
-              onClicked: root.saveSettings()
-            }
-
-            Text {
-              text: root.saveMessage
-              visible: text !== ""
-              color: root.contentForeground
-              font.family: root.contentFontFamily
-              font.pixelSize: Style.font.bodySmall
-              anchors.verticalCenter: parent.verticalCenter
-              Accessible.role: Accessible.StaticText
-              Accessible.name: text
-            }
           }
         }
       }
+    }
+  }
+
+  component SettingsRow: Button {
+    id: settingsRow
+
+    required property string rowTitle
+    required property string rowSummary
+    required property string targetView
+
+    text: ""
+    implicitHeight: rowSummary === "" ? Style.space(54) : Style.space(68)
+    foreground: root.contentForeground
+    fontFamily: root.contentFontFamily
+    horizontalPadding: Style.space(12)
+    verticalPadding: 0
+    focusable: true
+    leftAlign: true
+    Accessible.role: Accessible.Button
+    Accessible.name: rowTitle
+    Accessible.description: rowSummary === "" ? "Open " + rowTitle : rowSummary
+    Accessible.onPressAction: root.showView(targetView)
+    onClicked: root.showView(targetView)
+
+    Column {
+      anchors.left: parent.left
+      anchors.right: chevron.left
+      anchors.leftMargin: Style.space(12)
+      anchors.rightMargin: Style.space(12)
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(3)
+
+      Text {
+        width: parent.width
+        text: settingsRow.rowTitle
+        color: root.contentForeground
+        font.family: root.contentFontFamily
+        font.pixelSize: Style.font.body
+        font.bold: settingsRow.rowSummary === ""
+        elide: Text.ElideRight
+      }
+
+      Text {
+        visible: settingsRow.rowSummary !== ""
+        width: parent.width
+        text: settingsRow.rowSummary
+        color: root.mutedForeground
+        font.family: root.contentFontFamily
+        font.pixelSize: Style.font.bodySmall
+        elide: Text.ElideRight
+      }
+    }
+
+    Text {
+      id: chevron
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(12)
+      anchors.verticalCenter: parent.verticalCenter
+      text: "󰅂"
+      color: root.mutedForeground
+      font.family: root.contentFontFamily
+      font.pixelSize: Style.font.title
+    }
+
+    Rectangle {
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.bottom: parent.bottom
+      height: 1
+      color: Qt.rgba(
+        root.contentForeground.r,
+        root.contentForeground.g,
+        root.contentForeground.b,
+        0.12
+      )
     }
   }
 }
