@@ -402,6 +402,21 @@ Exit criteria: interruptions adapt to supported local context, postponed
 breaks remain accountable, routines can be personalized, and insights remain
 small, private, and non-punitive.
 
+### M4 · Delivery automation
+
+Goal: make validation and releases reproducible without replacing target-session
+acceptance or granting automation unnecessary authority.
+
+- [ ] [#29 — Add deterministic pull-request CI and quality gates](https://github.com/AndyBoWu/Intermission/issues/29)
+- [ ] [#30 — Automate Omarchy and QML compatibility validation](https://github.com/AndyBoWu/Intermission/issues/30)
+- [ ] [#31 — Harden GitHub Actions and automate security checks](https://github.com/AndyBoWu/Intermission/issues/31)
+- [ ] [#33 — Configure protected main-branch and CI governance](https://github.com/AndyBoWu/Intermission/issues/33)
+- [ ] [#32 — Add a gated, tag-driven GitHub release workflow](https://github.com/AndyBoWu/Intermission/issues/32)
+
+Exit criteria: pull requests receive deterministic least-privilege checks,
+upstream compatibility drift is visible, main is protected by stable gates,
+and an approved semantic tag can create one reproducible GitHub release.
+
 ### Dependency chain
 
 ```text
