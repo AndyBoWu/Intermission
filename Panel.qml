@@ -733,6 +733,7 @@ Panel {
               rowTitle: root.presetLabel() + " rhythm"
               rowSummary: ""
               targetView: "rhythm"
+              compact: true
             }
           }
 
@@ -774,7 +775,7 @@ Panel {
                 text: root.viewTitle()
                 color: root.contentForeground
                 font.family: root.contentFontFamily
-                font.pixelSize: Style.font.title
+                font.pixelSize: Math.max(Style.font.title, Style.space(16))
                 font.bold: true
                 elide: Text.ElideRight
               }
@@ -847,14 +848,19 @@ Panel {
               targetView: "behavior"
             }
 
+            Item {
+              width: parent.width
+              height: Style.space(16)
+            }
+
             Button {
               width: parent.width
-              topPadding: Style.space(14)
               text: "Reset to defaults"
-              foreground: root.mutedForeground
+              foreground: root.contentForeground
               fontFamily: root.contentFontFamily
-              fontSize: Style.font.bodySmall
-              leftAlign: true
+              fontSize: Style.font.body
+              verticalPadding: Style.space(11)
+              bordered: true
               focusable: true
               Accessible.role: Accessible.Button
               Accessible.name: text
@@ -1663,9 +1669,12 @@ Panel {
     required property string rowTitle
     required property string rowSummary
     required property string targetView
+    property bool compact: false
 
     text: ""
-    implicitHeight: rowSummary === "" ? Style.space(54) : Style.space(68)
+    implicitHeight: compact
+      ? Style.space(54)
+      : rowSummary === "" ? Style.space(60) : Style.space(84)
     foreground: root.contentForeground
     fontFamily: root.contentFontFamily
     horizontalPadding: Style.space(12)
@@ -1691,7 +1700,8 @@ Panel {
         text: settingsRow.rowTitle
         color: root.contentForeground
         font.family: root.contentFontFamily
-        font.pixelSize: Style.font.body
+        font.pixelSize: settingsRow.compact
+          ? Style.font.body : Math.max(Style.font.body, Style.space(14))
         font.bold: settingsRow.rowSummary === ""
         elide: Text.ElideRight
       }
@@ -1702,7 +1712,7 @@ Panel {
         text: settingsRow.rowSummary
         color: root.mutedForeground
         font.family: root.contentFontFamily
-        font.pixelSize: Style.font.bodySmall
+        font.pixelSize: Math.max(Style.font.bodySmall, Style.space(11))
         elide: Text.ElideRight
       }
     }
