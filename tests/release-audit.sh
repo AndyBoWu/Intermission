@@ -72,6 +72,7 @@ runtime_files=(
   "$PROJECT_ROOT/Settings.js"
   "$PROJECT_ROOT/BreakViewModel.js"
   "$PROJECT_ROOT/StateStore.js"
+  "$PROJECT_ROOT/History.js"
 )
 runtime_pattern='(^|[^[:alnum:]_])(sudo|pkexec|systemctl|curl|wget)([^[:alnum:]_]|$)|https?://|execDetached|Process[[:space:]]*\{'
 if rg -l -i "$runtime_pattern" "${runtime_files[@]}" >/dev/null; then

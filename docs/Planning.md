@@ -245,6 +245,7 @@ BarWidget.qml
 Panel.qml
 Overlay.qml
 Engine.js
+History.js
 StateStore.js
 tests/
   engine.test.js
@@ -296,6 +297,7 @@ completeBreak
 openOverlay
 hideOverlay
 showPanel
+exportHistory
 ```
 
 The panel is opened through the bar widget or `showPanel`; a generic plugin
@@ -391,7 +393,7 @@ surveillance product.
 
 - [x] [#11 — Add context-aware deferral and break debt](https://github.com/AndyBoWu/Intermission/issues/11)
 - [x] [#12 — Add custom break rotation and workday policy](https://github.com/AndyBoWu/Intermission/issues/12)
-- [ ] [#13 — Add private local history and humane adherence insights](https://github.com/AndyBoWu/Intermission/issues/13)
+- [x] [#13 — Add private local history and humane adherence insights](https://github.com/AndyBoWu/Intermission/issues/13)
 
 Exit criteria: interruptions adapt to supported local context, postponed
 breaks remain accountable, routines can be personalized, and insights remain

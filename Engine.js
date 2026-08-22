@@ -89,6 +89,7 @@ function createState(now, rawSettings) {
     phase: "stopped",
     phaseEnteredAtEpochMs: timestamp,
     activeElapsedMs: 0,
+    historyBaselineActiveWorkMs: 0,
     activeStartedAtEpochMs: null,
     workTargetMs: workTargetMs("short", settings),
     breakKind: null,
@@ -150,6 +151,10 @@ function activeElapsedMs(state, now) {
   return elapsed
 }
 
+function settledActiveWorkMs(state, now) {
+  return Math.max(0, Math.min(activeElapsedMs(state, now), Number(state.workTargetMs) || 0))
+}
+
 function publicState(state, now, rawSettings) {
   var settings = normalizeSettings(rawSettings)
   var timestamp = isFiniteNumber(now) ? now : state.savedAtEpochMs
@@ -189,6 +194,8 @@ function publicState(state, now, rawSettings) {
     contextDeferred: state.contextDeferred === true,
     manualHoldRemainingSeconds: Math.ceil(Math.max(0,
       (state.manualHoldUntilEpochMs || timestamp) - timestamp) / 1000),
+    activeElapsedSeconds: Math.floor(settledActiveWorkMs(state, timestamp) / 1000),
+    activeElapsedMs: Math.floor(settledActiveWorkMs(state, timestamp)),
     outsideHours: state.phase === "outside",
     outsideResumePhase: state.phase === "outside" ? state.resumePhase : null,
     workdayOverrideActive: state.workdayOverrideActive === true,
@@ -200,6 +207,7 @@ function freshActive(state, now, settings, cycleIndex, effects, nextDebtMs) {
   var kind = breakKindForCycle(cycleIndex, settings)
   var next = changedState(state, now, "active", {
     activeElapsedMs: 0,
+    historyBaselineActiveWorkMs: 0,
     activeStartedAtEpochMs: now,
     workTargetMs: workTargetMs(kind, settings),
     breakKind: kind,
@@ -231,11 +239,15 @@ function freshIdle(state, now, settings, effects, actualDurationMs) {
     breakKind: state.breakKind,
     scheduledDurationMs: state.breakDurationMs,
     actualDurationMs: actualDurationMs,
+    activeWorkMs: settledActiveWorkMs(state, now),
+    historyBaselineActiveWorkMs: state.historyBaselineActiveWorkMs || 0,
+    workTargetMs: state.workTargetMs,
     source: "idle"
   }
   var next = changedState(state, now, "idle", {
     phaseEnteredAtEpochMs: now,
     activeElapsedMs: 0,
+    historyBaselineActiveWorkMs: 0,
     activeStartedAtEpochMs: null,
     workTargetMs: workTargetMs(kind, settings),
     breakKind: kind,
@@ -269,6 +281,9 @@ function finishBreakCycle(state, now, settings, type, details) {
     breakKind: state.breakKind,
     scheduledDurationMs: state.breakDurationMs
   }
+  effect.activeWorkMs = settledActiveWorkMs(state, now)
+  effect.historyBaselineActiveWorkMs = state.historyBaselineActiveWorkMs || 0
+  effect.workTargetMs = state.workTargetMs
   var values = details || {}
   for (var key in values) effect[key] = values[key]
   var nextDebt = boundedDebtMs(state.breakDebtMs, settings)
@@ -329,7 +344,10 @@ function deferForContext(state, now, settings) {
     type: "break-context-deferred",
     atEpochMs: now,
     breakKind: state.breakKind,
-    breakDebtMs: nextDebt
+    scheduledDurationMs: state.breakDurationMs,
+    breakDebtMs: nextDebt,
+    activeWorkMs: settledActiveWorkMs(state, now),
+    workTargetMs: state.workTargetMs
   }])
 }
 
@@ -463,9 +481,20 @@ function transition(inputState, event, now, rawSettings) {
 
   if (type === "stop") {
     if (state.phase === "stopped") return success(state, false)
+    var stoppedActiveWork = settledActiveWorkMs(state, now)
+    var stopEffects = stoppedActiveWork > 0 && BREAK_KINDS.indexOf(state.breakKind) !== -1 ? [{
+      type: "work-reset",
+      atEpochMs: now,
+      breakKind: state.breakKind,
+      scheduledDurationMs: state.breakDurationMs,
+      activeWorkMs: stoppedActiveWork,
+      historyBaselineActiveWorkMs: state.historyBaselineActiveWorkMs || 0,
+      workTargetMs: state.workTargetMs,
+      reason: "stop"
+    }] : []
     var stopped = createState(now, settings)
     stopped.revision = state.revision + 1
-    return success(stopped, true)
+    return success(stopped, true, stopEffects)
   }
 
   if (type === "pause") {
@@ -539,8 +568,10 @@ function transition(inputState, event, now, rawSettings) {
   if (type === "stopForDay") {
     if (state.phase !== "outside")
       return failure(state, "INVALID_STATE", "Stop for today requires outside-hours state")
-    return success(changedState(state, now, "outside", {
+    var stoppedForDayActiveWork = settledActiveWorkMs(state, now)
+    var stoppedForDay = changedState(state, now, "outside", {
       activeElapsedMs: 0,
+      historyBaselineActiveWorkMs: 0,
       activeStartedAtEpochMs: null,
       warningStartedAtEpochMs: null,
       deferredUntilEpochMs: null,
@@ -551,7 +582,20 @@ function transition(inputState, event, now, rawSettings) {
       workdayOverrideActive: false,
       endOfDayPromptPending: false,
       resetAtNextWorkday: true
-    }), true, [{ type: "workday-stopped", atEpochMs: now }])
+    })
+    var stoppedForDayEffects = [{ type: "workday-stopped", atEpochMs: now }]
+    if (stoppedForDayActiveWork > 0 && BREAK_KINDS.indexOf(state.breakKind) !== -1)
+      stoppedForDayEffects.push({
+        type: "work-reset",
+        atEpochMs: now,
+        breakKind: state.breakKind,
+        scheduledDurationMs: state.breakDurationMs,
+        activeWorkMs: stoppedForDayActiveWork,
+        historyBaselineActiveWorkMs: state.historyBaselineActiveWorkMs || 0,
+        workTargetMs: state.workTargetMs,
+        reason: "stop-for-day"
+      })
+    return success(stoppedForDay, true, stoppedForDayEffects)
   }
 
   if (type === "enterIdle") {
@@ -590,8 +634,11 @@ function transition(inputState, event, now, rawSettings) {
       type: "break-deferred",
       atEpochMs: now,
       breakKind: state.breakKind,
+      scheduledDurationMs: state.breakDurationMs,
       seconds: seconds,
-      breakDebtMs: snoozeDebt
+      breakDebtMs: snoozeDebt,
+      activeWorkMs: settledActiveWorkMs(state, now),
+      workTargetMs: state.workTargetMs
     }])
   }
 
@@ -723,6 +770,7 @@ function snapshotState(inputState, now) {
 function stateWithAdditiveDefaults(inputState) {
   var state = clone(inputState)
   if (state.breakDebtMs === undefined) state.breakDebtMs = 0
+  if (state.historyBaselineActiveWorkMs === undefined) state.historyBaselineActiveWorkMs = 0
   if (state.pendingDebtRecorded === undefined) state.pendingDebtRecorded = false
   if (state.contextDeferred === undefined) state.contextDeferred = false
   if (state.manualHoldUntilEpochMs === undefined) state.manualHoldUntilEpochMs = null
@@ -741,6 +789,9 @@ function validSnapshot(snapshot) {
   if (!Number.isInteger(snapshot.phaseEnteredAtEpochMs) || snapshot.phaseEnteredAtEpochMs < 0 ||
       snapshot.phaseEnteredAtEpochMs > snapshot.savedAtEpochMs) return false
   if (!Number.isInteger(snapshot.activeElapsedMs) || snapshot.activeElapsedMs < 0) return false
+  if (!Number.isInteger(snapshot.historyBaselineActiveWorkMs) ||
+      snapshot.historyBaselineActiveWorkMs < 0 ||
+      snapshot.historyBaselineActiveWorkMs > snapshot.activeElapsedMs) return false
   if (!Number.isInteger(snapshot.workTargetMs) || snapshot.workTargetMs <= 0) return false
   if (snapshot.breakKind !== null && BREAK_KINDS.indexOf(snapshot.breakKind) === -1) return false
   if (!Number.isInteger(snapshot.cycleIndex) || snapshot.cycleIndex < 0) return false
@@ -775,7 +826,8 @@ function validSnapshot(snapshot) {
   if (snapshot.resumePhase !== null && typeof snapshot.resumePhase !== "string") return false
 
   if (snapshot.phase === "stopped") {
-    return snapshot.breakKind === null && snapshot.activeElapsedMs === 0 && snapshot.cycleIndex === 0 &&
+    return snapshot.breakKind === null && snapshot.activeElapsedMs === 0 &&
+      snapshot.historyBaselineActiveWorkMs === 0 && snapshot.cycleIndex === 0 &&
       snapshot.activeStartedAtEpochMs === null &&
       snapshot.warningStartedAtEpochMs === null && snapshot.deferredUntilEpochMs === null &&
       snapshot.breakStartedAtEpochMs === null && snapshot.breakDurationMs === 0 &&

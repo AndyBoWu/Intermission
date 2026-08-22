@@ -81,6 +81,12 @@ remains a live acceptance check.
 | End-of-day choice | Enable the prompt and exercise wait, stop, and continue on separate local dates | Prompt is non-blocking and once per date; each reversible choice follows its documented scope | #12 |
 | Timezone change | Change the session timezone across an allowed boundary and restore it | Policy re-evaluates local time without retaining the old zone or advancing frozen time | #12 |
 | Outside-hours restart | Close during an outside-hours phase and restore after more than 12 hours | The frozen phase and progress survive without accruing active time or owed rest | #12 |
+| History opt-in | Enable local history, complete, naturally satisfy, defer, skip, exit, stop, and stop for today across separate accelerated cycles | Only the six documented fixed event types and exact retained fields appear | #13 |
+| Insight boundaries | Exercise empty, today, skipped-day, 7-day, and 14-day samples around a local date boundary | Active minutes, neutral outcomes, adherence, and forgiving continuity match the contract | #13 |
+| History retention | Load more than 30 local days and more than 2,000 valid events | Only the newest allowed days and events remain; timer operation is unchanged | #13 |
+| History privacy | Inspect settings, session, history, panel export, and IPC export | No app, window, process, content, or raw activity timeline is retained | #13 |
+| History reset and opt-out | Reset once, then disable and save after recording new events | Event data is removed without resetting cadence; the panel reports history off and IPC exports an empty versioned document | #13 |
+| History corruption | Start with malformed, oversized, or unsupported history, then reset explicitly | Timer continues; corrupt data is not automatically replaced; explicit reset resumes safe recording | #13 |
 | Short break | Start a short break with accelerated settings | Rotating instruction and countdown are correct; completion advances cadence | #7 / #9 |
 | Dual cadence | Apply a named preset, accelerate a short-to-long sequence, then reload | Each work target and break duration matches its type; the preset persists | #9 |
 | Long break | Complete the configured short-cycle count | Long routine and duration replace the short routine | #9 |

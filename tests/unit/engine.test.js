@@ -36,6 +36,7 @@ test("active countdown is derived without mutating persisted elapsed time", () =
   const before = JSON.stringify(state);
   const view = Engine.publicState(state, 25 * SECOND, settings());
   assertEqual(view.remainingSeconds, 75);
+  assertEqual(view.activeElapsedMs, 25 * SECOND);
   assertEqual(state.activeElapsedMs, 0);
   assertEqual(JSON.stringify(state), before);
 });
@@ -160,6 +161,8 @@ test("manual break and completion use the same cadence transition", () => {
   assertEqual(completed.state.cycleIndex, 1);
   assertEqual(completed.effects[0].type, "break-completed");
   assertEqual(completed.effects[0].actualDurationMs, 20 * SECOND);
+  assertEqual(completed.effects[0].activeWorkMs, 20 * SECOND);
+  assertEqual(completed.effects[0].workTargetMs, 100 * SECOND);
 });
 
 test("emergency exit completes the break with an explicit safety effect", () => {
@@ -170,6 +173,59 @@ test("emergency exit completes the break with an explicit safety effect", () => 
   assertEqual(exited.state.phase, "active");
   assertEqual(exited.effects[0].type, "break-emergency-exit");
   assertEqual(exited.effects[0].reason, "escape-hold");
+  assertEqual(exited.effects[0].activeWorkMs, 10 * SECOND);
+});
+
+test("settled outcomes carry bounded active work without per-app detail", () => {
+  const options = settings();
+  const warning = atWarning(options);
+  const deferred = Engine.transition(warning, { type: "snooze" }, 91 * SECOND, options);
+  assertEqual(deferred.effects[0].scheduledDurationMs, 20 * SECOND);
+  assertEqual(deferred.effects[0].activeWorkMs, 90 * SECOND);
+  assertEqual(deferred.effects[0].workTargetMs, 100 * SECOND);
+
+  const skipped = Engine.transition(warning, { type: "skip" }, 91 * SECOND, options);
+  assertEqual(skipped.effects[0].activeWorkMs, 90 * SECOND);
+  assertEqual(skipped.effects[0].workTargetMs, 100 * SECOND);
+
+  const idle = Engine.transition(started(0, options), { type: "enterIdle" }, 10 * SECOND, options).state;
+  const natural = Engine.transition(idle, {
+    type: "naturalBreak",
+    durationMs: 120 * SECOND
+  }, 130 * SECOND, options);
+  assertEqual(natural.effects[0].activeWorkMs, 10 * SECOND);
+  assertEqual(natural.effects[0].workTargetMs, 100 * SECOND);
+});
+
+test("stopping settles otherwise unreported active work exactly once", () => {
+  const options = settings();
+  const active = started(0, options);
+  active.historyBaselineActiveWorkMs = 10 * SECOND;
+  const stopped = Engine.transition(active, { type: "stop" }, 15 * SECOND, options);
+  assertEqual(stopped.effects.length, 1);
+  assertEqual(stopped.effects[0].type, "work-reset");
+  assertEqual(stopped.effects[0].activeWorkMs, 15 * SECOND);
+  assertEqual(stopped.effects[0].reason, "stop");
+  assertEqual(stopped.effects[0].historyBaselineActiveWorkMs, 10 * SECOND);
+  assertEqual(stopped.state.historyBaselineActiveWorkMs, 0);
+
+  const alreadyStopped = Engine.transition(stopped.state, { type: "stop" }, 16 * SECOND, options);
+  assertEqual(alreadyStopped.changed, false);
+  assertEqual(alreadyStopped.effects.length, 0);
+});
+
+test("stop for today settles frozen active work before its next-window reset", () => {
+  const options = settings();
+  const active = started(0, options);
+  const outside = Engine.transition(active, {
+    type: "closeWorkday",
+    dateKey: "2026-08-21"
+  }, 15 * SECOND, options).state;
+  const stopped = Engine.transition(outside, { type: "stopForDay" }, 16 * SECOND, options);
+  const reset = stopped.effects.find((effect) => effect.type === "work-reset");
+  assert(reset, "Stop for today should settle active work");
+  assertEqual(reset.activeWorkMs, 15 * SECOND);
+  assertEqual(reset.reason, "stop-for-day");
 });
 
 test("four work cycles end with a long break", () => {
@@ -561,6 +617,10 @@ test("invalid, future, and stale snapshots fail closed", () => {
   const fractionalTimestamp = started(0, options);
   fractionalTimestamp.savedAtEpochMs = 1.5;
   assertEqual(Engine.restoreState(fractionalTimestamp, 2 * SECOND, options).error.code, "INVALID_SNAPSHOT");
+
+  const invalidBaseline = Engine.snapshotState(started(0, options), 10 * SECOND);
+  invalidBaseline.historyBaselineActiveWorkMs = 11 * SECOND;
+  assertEqual(Engine.restoreState(invalidBaseline, 20 * SECOND, options).error.code, "INVALID_SNAPSHOT");
 });
 
 test("stopped snapshots use the contract null break and round-trip", () => {
@@ -585,6 +645,7 @@ test("older version-one snapshots receive additive context defaults", () => {
   delete legacy.endOfDayPromptPending;
   delete legacy.lastEndOfDayPromptDateKey;
   delete legacy.resetAtNextWorkday;
+  delete legacy.historyBaselineActiveWorkMs;
   legacy.savedAtEpochMs = 10 * SECOND;
 
   const restored = Engine.restoreState(legacy, 20 * SECOND, options);
@@ -597,6 +658,19 @@ test("older version-one snapshots receive additive context defaults", () => {
   assertEqual(restored.state.endOfDayPromptPending, false);
   assertEqual(restored.state.lastEndOfDayPromptDateKey, null);
   assertEqual(restored.state.resetAtNextWorkday, false);
+  assertEqual(restored.state.historyBaselineActiveWorkMs, 0);
+});
+
+test("history opt-in baseline survives snapshot recovery without counting downtime", () => {
+  const options = settings();
+  const active = started(0, options);
+  active.historyBaselineActiveWorkMs = 10 * SECOND;
+  const snapshot = Engine.snapshotState(active, 10 * SECOND);
+  const restored = Engine.restoreState(snapshot, 20 * SECOND, options);
+
+  assert(restored.ok);
+  assertEqual(restored.state.historyBaselineActiveWorkMs, 10 * SECOND);
+  assertEqual(restored.state.activeElapsedMs, 10 * SECOND);
 });
 
 test("context deferral and owed rest survive snapshot recovery", () => {

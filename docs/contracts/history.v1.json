@@ -2,12 +2,15 @@
   "schemaVersion": 1,
   "events": [
     {
-      "id": "event-0001",
+      "id": "event-r7-0-1787356800000-completed",
       "atEpochMs": 1787356800000,
+      "localDateKey": "2026-08-21",
       "type": "completed",
       "breakKind": "short",
       "scheduledDurationMs": 20000,
       "actualDurationMs": 20000,
+      "activeWorkMs": 1200000,
+      "workTargetMs": 1200000,
       "source": "overlay",
       "reason": null
     }

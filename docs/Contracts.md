@@ -1,6 +1,6 @@
 # Runtime and IPC Contracts
 
-Status: Accepted for M0<br>
+Status: Implemented through M3<br>
 Contract version: 1<br>
 Plugin ID: `io.github.andybowu.intermission`
 
@@ -51,6 +51,8 @@ Example: [`contracts/settings.v1.json`](contracts/settings.v1.json)
 | `customBreakItems` | object array | empty | Up to 8 local `{id, label, instruction}` items |
 | `workdayHoursEnabled` | boolean | `false` | `true` or `false` |
 | `endOfDayPromptEnabled` | boolean | `false` | `true` or `false` |
+| `historyEnabled` | boolean | `false` | `true` or `false` |
+| `historyWindowDays` | integer | `7` | `7` or `14` |
 | `workdayHoursByDay` | object | weekdays `09:00-17:00`; weekends `off` | One `HH:MM-HH:MM` or `off` value for each day |
 
 ### Validation
@@ -111,6 +113,7 @@ Example: [`contracts/session.v1.json`](contracts/session.v1.json)
 | `phase` | string | `stopped`, `active`, `idle`, `warning`, `deferred`, `break`, `paused`, or `outside` |
 | `phaseEnteredAtEpochMs` | integer | Time the current phase began |
 | `activeElapsedMs` | non-negative integer | Active time already counted in this work interval |
+| `historyBaselineActiveWorkMs` | non-negative integer | Current-interval work accumulated before an opt-in; excluded from future history and zero otherwise |
 | `activeStartedAtEpochMs` | integer or null | Start of the current active segment |
 | `workTargetMs` | positive integer | Captured work target for the current interval |
 | `breakKind` | string or null | `short`, `long`, or null when no break is pending |
@@ -214,8 +217,8 @@ history and never locks the session.
 
 ## 4. History contract
 
-History is reserved now so M3 can add insights without changing the runtime
-model. Its file lives at:
+Private history is optional and off by default. When enabled, its separate
+file lives at:
 
 ```text
 ${XDG_STATE_HOME:-~/.local/state}/intermission/history.json
@@ -223,23 +226,58 @@ ${XDG_STATE_HOME:-~/.local/state}/intermission/history.json
 
 Example: [`contracts/history.v1.json`](contracts/history.v1.json)
 
-The file contains `schemaVersion` and an append-only `events` array. Each event
-has:
+The file contains `schemaVersion` and a bounded `events` array. A settled
+runtime transition is appended only after its session snapshot is accepted
+for persistence. Event IDs derive from the runtime revision and effect index,
+so retrying the same transition does not duplicate it. Each event has exactly:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `id` | string | Locally unique opaque event ID |
+| `id` | string | Deterministic local `event-r{revision}-{index}-{event-time}-{type}` ID |
 | `atEpochMs` | integer | Event time |
-| `type` | string | `completed`, `natural`, `deferred`, `skipped`, or `emergency-exit` |
+| `localDateKey` | string | Local `YYYY-MM-DD` aggregation key at event time |
+| `type` | string | `completed`, `natural`, `deferred`, `skipped`, `emergency-exit`, or `work-reset` |
 | `breakKind` | string | `short` or `long` |
 | `scheduledDurationMs` | non-negative integer | Planned duration |
 | `actualDurationMs` | non-negative integer | Observed duration |
-| `source` | string | `overlay`, `idle`, `panel`, or `ipc` |
+| `activeWorkMs` | non-negative integer | Settled active use for the work interval; deferred events store zero |
+| `workTargetMs` | non-negative integer | Captured target for that work interval |
+| `source` | string | `timer`, `overlay`, `panel`, `ipc`, `idle`, `recovery`, `user`, `context`, or `service` |
 | `reason` | string or null | A fixed enum value, never arbitrary captured text |
 
-History is not required to restore a session. If it is missing or invalid, the
-timer continues and insights remain unavailable until the file is reset or
-repaired. Runtime recovery must never overwrite corrupt history.
+No event contains an app ID, window title, process, keystroke, content sample,
+or raw activity timeline. The file keeps at most 30 local calendar days, 2,000
+events, and 1 MiB of encoded JSON. Oldest entries are pruned first.
+
+Enabling history during a running interval stores one bounded baseline in the
+runtime snapshot. The first settled outcome subtracts it, so work accumulated
+before consent is never copied into history, including after a shell restart.
+
+The panel shows today plus a selected 7- or 14-day window. Active minutes are
+the sum of settled active work plus the current unsettled interval. Adherence
+is `(completed + natural) / (completed + natural + skipped)`; deferrals and
+emergency exits are neutral. A day supports continuity when it has at least
+one completed or natural break and those outcomes are not outnumbered by
+skips. Empty days are neutral, so one isolated skip beside a supportive break
+does not create a punitive broken streak.
+
+Live unsettled work appears under the current local date; its eventual event
+uses the local date on which the interval settles. The summary does not
+reconstruct a raw minute-by-minute timeline across midnight.
+
+History is never required to restore or advance the timer. Missing history
+starts empty. Unreadable JSON, an invalid root shape, an oversized file, or an
+unsupported schema remains untouched and recording stays unavailable until
+the user explicitly resets it. Inside an otherwise supported document,
+unknown fields are removed and invalid or duplicate events are dropped before
+the bounded document is saved. Disabling history and
+saving overwrites the file with an empty schema document, removing all event
+data while leaving cadence state unchanged. The same reset is available from
+the panel; it also moves the active-work baseline to the reset moment so the
+unsettled interval does not repopulate cleared work. The panel exposes the
+retained document as selectable JSON, and
+`exportHistory` wraps that document with enabled state and retention bounds
+for machine-readable IPC use.
 
 ## 5. IPC contract
 
@@ -315,6 +353,7 @@ Error codes are stable enums: `INVALID_ARGUMENT`, `INVALID_STATE`,
 | `openOverlay` | `{}` | Idempotently summon the overlay for the active break |
 | `hideOverlay` | `{"reason": "ipc"}` | Idempotently close all overlay surfaces without losing runtime state |
 | `showPanel` | `{}` | Ask the live bar to open the Intermission control panel |
+| `exportHistory` | `{}` | Return enabled state, retention bounds, and the versioned local history document |
 
 `snooze.seconds` must be an integer from 60 to 1800. `kind`, `reason`, and
 `source` accept only their documented enum values. Unknown arguments fail with
@@ -343,6 +382,7 @@ panel lifecycle.
 | `Engine.js` | Pure transitions, cadence calculations, public-state projection | File I/O, QML objects, or clocks |
 | `Service.qml` | Current runtime state, timers, idle signals, IPC, atomic file I/O, orchestration | Per-display visual state |
 | `StateStore.js` | Pure validation, normalization, serialization, and recovery decisions | File I/O, QML objects, or product transitions |
+| `History.js` | Pure event validation, retention, export, and humane aggregation | File I/O, app observation, or runtime transitions |
 | `BarWidget.qml` | Read-only status projection and user intents | Canonical timer state or IPC handler |
 | `Panel.qml` | Editable form state until save | Runtime countdown or persistence policy |
 | `Overlay.qml` | Per-display rendering and focus state | Completion policy or canonical break state |

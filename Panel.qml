@@ -14,6 +14,9 @@ Panel {
   property var form: Settings.formFromSettings(settings)
   property bool dirty: false
   property string saveMessage: ""
+  property bool historyResetArmed: false
+  property bool historyExportVisible: false
+  property string historyExportText: ""
 
   readonly property var barIdentity: hostWidget || root
   readonly property var state: service && service.ready
@@ -27,10 +30,26 @@ Panel {
         breakDebtSeconds: 0,
         contextDeferred: false,
         manualHoldRemainingSeconds: 0,
+        activeElapsedSeconds: 0,
         outsideHours: false,
         outsideResumePhase: null,
         workdayOverrideActive: false,
         endOfDayPromptPending: false
+      })
+  readonly property var todayInsights: service && service.todayInsights
+    ? service.todayInsights
+    : ({ activeMinutes: 0, supportiveBreaks: 0, adherencePercent: null })
+  readonly property var windowInsights: service && service.windowInsights
+    ? service.windowInsights
+    : ({
+        days: 7,
+        activeMinutes: 0,
+        adherencePercent: null,
+        continuityDays: 0,
+        deferred: 0,
+        skipped: 0,
+        emergencyExit: 0,
+        activeDays: 0
       })
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
@@ -150,6 +169,32 @@ Panel {
     return String(minutes) + ":" + (remainder < 10 ? "0" : "") + String(remainder)
   }
 
+  function formatAdherence(value) {
+    return value === null || value === undefined ? "—" : String(value) + "%"
+  }
+
+  function toggleHistoryExport() {
+    if (root.historyExportVisible) {
+      root.historyExportVisible = false
+      root.historyExportText = ""
+      return
+    }
+    root.historyExportText = root.service ? root.service.historyExportText() : ""
+    root.historyExportVisible = root.historyExportText !== ""
+  }
+
+  function requestHistoryReset() {
+    if (!root.historyResetArmed) {
+      root.historyResetArmed = true
+      historyResetTimer.restart()
+      return
+    }
+    if (root.service) root.service.clearHistory()
+    root.historyResetArmed = false
+    root.historyExportVisible = false
+    root.historyExportText = ""
+  }
+
   function setFormValue(name, value) {
     var next = {}
     for (var key in root.form) next[key] = root.form[key]
@@ -247,6 +292,12 @@ Panel {
     id: savedMessageTimer
     interval: 1800
     onTriggered: root.saveMessage = ""
+  }
+
+  Timer {
+    id: historyResetTimer
+    interval: 5000
+    onTriggered: root.historyResetArmed = false
   }
 
   KeyboardPanel {
@@ -948,6 +999,217 @@ Panel {
               Accessible.onPressAction: if (enabled && root.service) root.service.stopForDay()
               onClicked: if (root.service) root.service.stopForDay()
             }
+          }
+
+          PanelSeparator { foreground: root.contentForeground }
+          PanelSectionHeader {
+            text: "INSIGHTS"
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+          }
+
+          Toggle {
+            width: parent.width
+            label: "Keep private local history"
+            description: "Off by default. Disabling and saving removes all retained event data."
+            checked: root.form.historyEnabled
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: label
+            Accessible.description: description
+            Accessible.checkable: true
+            Accessible.checked: checked
+            Accessible.onPressAction: if (enabled) root.setFormValue(
+              "historyEnabled",
+              !root.form.historyEnabled
+            )
+            Accessible.onToggleAction: if (enabled) root.setFormValue(
+              "historyEnabled",
+              !root.form.historyEnabled
+            )
+            onClicked: root.setFormValue("historyEnabled", !root.form.historyEnabled)
+          }
+
+          ButtonGroup {
+            visible: root.form.historyEnabled
+            options: [
+              { value: "7", label: "7 days" },
+              { value: "14", label: "14 days" }
+            ]
+            value: String(root.form.historyWindowDays)
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+            Accessible.role: Accessible.ComboBox
+            Accessible.name: "Insight window: " + String(root.form.historyWindowDays) + " days"
+            Accessible.description: "Choose a seven or fourteen day summary"
+            onChanged: function(value) { root.setFormValue("historyWindowDays", Number(value)) }
+          }
+
+          Text {
+            width: parent.width
+            visible: !root.service || !root.service.historyReady
+            text: "Local history is loading. Reminder timing is unaffected."
+            color: root.contentForeground
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+            width: parent.width
+            visible: root.service && root.service.historyReady &&
+              root.service.configuration.historyEnabled !== true
+            text: root.service && !root.service.historyWritable && root.service.historyStatus !== ""
+              ? root.service.historyStatus
+              : root.form.historyEnabled
+              ? "Save changes to begin a fresh local history."
+              : "History is off; no event data is retained."
+            color: root.contentForeground
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+            width: parent.width
+            visible: root.service && root.service.historyReady &&
+              root.service.configuration.historyEnabled === true &&
+              !root.service.historyRecordingAvailable
+            text: root.service && root.service.historyStatus !== ""
+              ? root.service.historyStatus
+              : "Session recovery storage is unavailable, so new history is not being recorded."
+            color: root.contentForeground
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Column {
+            visible: root.service && root.service.historyReady &&
+              root.service.configuration.historyEnabled === true &&
+              root.service.historyRecordingAvailable
+            width: parent.width
+            spacing: Style.space(5)
+
+            Text {
+              width: parent.width
+              text: "Today · " + String(root.todayInsights.activeMinutes) +
+                " active min · " + String(root.todayInsights.supportiveBreaks) +
+                " supportive breaks · " + root.formatAdherence(
+                  root.todayInsights.adherencePercent
+                ) + " adherence"
+              color: root.contentForeground
+              font.family: root.contentFontFamily
+              font.pixelSize: Style.font.body
+              wrapMode: Text.WordWrap
+              Accessible.role: Accessible.StaticText
+              Accessible.name: text
+            }
+
+            Text {
+              width: parent.width
+              text: String(root.windowInsights.days) + " days · " +
+                String(root.windowInsights.activeMinutes) + " active min · " +
+                root.formatAdherence(root.windowInsights.adherencePercent) +
+                " adherence · " + String(root.windowInsights.continuityDays) +
+                " supportive continuity days"
+              color: root.contentForeground
+              font.family: root.contentFontFamily
+              font.pixelSize: Style.font.body
+              wrapMode: Text.WordWrap
+              Accessible.role: Accessible.StaticText
+              Accessible.name: text
+            }
+
+            Text {
+              width: parent.width
+              text: "Deferred " + String(root.windowInsights.deferred) +
+                " · skipped " + String(root.windowInsights.skipped) +
+                " · early exits " + String(root.windowInsights.emergencyExit) +
+                " · active days " + String(root.windowInsights.activeDays)
+              color: root.contentForeground
+              font.family: root.contentFontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+              Accessible.role: Accessible.StaticText
+              Accessible.name: text
+            }
+          }
+
+          Text {
+            width: parent.width
+            visible: root.form.historyEnabled
+            text: "Stores only break outcomes and active-minute settlements when you stop, for up to 30 local days " +
+              "(2,000 events maximum). It never stores app, window, or raw activity details."
+            color: root.contentForeground
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+            width: parent.width
+            visible: root.form.historyEnabled
+            text: "Completed and natural breaks support adherence; skips count against it. " +
+              "Deferrals and early exits stay neutral. Continuity looks back from today, ignores empty days, " +
+              "and forgives a skip on a day that also has a supportive break."
+            color: root.contentForeground
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Row {
+            visible: root.service && root.service.historyReady &&
+              root.service.configuration.historyEnabled === true
+            width: parent.width
+            spacing: Style.space(8)
+
+            Button {
+              text: root.historyExportVisible ? "Hide JSON export" : "Show JSON export"
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              bordered: true
+              focusable: true
+              enabled: root.service && root.service.historyWritable
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Show a selectable machine-readable history document"
+              Accessible.onPressAction: if (enabled) root.toggleHistoryExport()
+              onClicked: root.toggleHistoryExport()
+            }
+
+            Button {
+              text: root.historyResetArmed ? "Confirm reset" : "Reset history"
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              bordered: true
+              focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: root.historyResetArmed
+                ? "Confirm permanent removal of retained event data"
+                : "Require a second press before clearing local history"
+              Accessible.onPressAction: if (enabled) root.requestHistoryReset()
+              onClicked: root.requestHistoryReset()
+            }
+          }
+
+          TextEdit {
+            visible: root.historyExportVisible
+            width: parent.width
+            height: visible ? Math.min(contentHeight, Style.space(180)) : 0
+            text: root.historyExportText
+            color: root.contentForeground
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            readOnly: true
+            selectByMouse: true
+            wrapMode: TextEdit.WrapAnywhere
+            clip: true
+            Accessible.role: Accessible.StaticText
+            Accessible.name: "JSON history export. Use select all and copy."
           }
 
           PanelSeparator { foreground: root.contentForeground }

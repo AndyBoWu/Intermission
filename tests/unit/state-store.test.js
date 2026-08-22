@@ -4,6 +4,9 @@ test("state store resolves the XDG session path with a home fallback", () => {
   assertEqual(StateStore.sessionPath("/tmp/state/", "/home/user"), "/tmp/state/intermission/session.json");
   assertEqual(StateStore.sessionPath("", "/home/user"), "/home/user/.local/state/intermission/session.json");
   assertEqual(StateStore.sessionPath("", ""), "");
+  assertEqual(StateStore.historyPath("/tmp/state/", "/home/user"), "/tmp/state/intermission/history.json");
+  assertEqual(StateStore.historyPath("", "/home/user"), "/home/user/.local/state/intermission/history.json");
+  assertEqual(StateStore.historyPath("", ""), "");
 });
 
 test("state store parses valid snapshots without mutating the source", () => {

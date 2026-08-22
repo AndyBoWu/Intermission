@@ -25,6 +25,8 @@
   "customBreakItems": [],
   "workdayHoursEnabled": false,
   "endOfDayPromptEnabled": false,
+  "historyEnabled": false,
+  "historyWindowDays": 7,
   "workdayHoursByDay": {
     "sun": "off",
     "mon": "09:00-17:00",

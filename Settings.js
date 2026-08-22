@@ -32,6 +32,8 @@ var DEFAULTS = {
   customBreakItems: [],
   workdayHoursEnabled: false,
   endOfDayPromptEnabled: false,
+  historyEnabled: false,
+  historyWindowDays: 7,
   workdayHoursByDay: DEFAULT_WORKDAY_HOURS
 }
 
@@ -258,6 +260,9 @@ function normalize(raw) {
     result.workdayHoursEnabled = source.workdayHoursEnabled
   if (typeof source.endOfDayPromptEnabled === "boolean")
     result.endOfDayPromptEnabled = source.endOfDayPromptEnabled
+  if (typeof source.historyEnabled === "boolean") result.historyEnabled = source.historyEnabled
+  if (source.historyWindowDays === 7 || source.historyWindowDays === 14)
+    result.historyWindowDays = source.historyWindowDays
   result.busyAppIds = appIdText(source.busyAppIds)
   result.customBreakItems = normalizeCustomBreakItems(source.customBreakItems)
   result.routineOrder = normalizeRoutineOrder(source.routineOrder, result.customBreakItems)
@@ -340,6 +345,8 @@ function entryFromForm(existing, form, pluginId) {
   entry.customBreakItems = clone(normalized.customBreakItems)
   entry.workdayHoursEnabled = normalized.workdayHoursEnabled
   entry.endOfDayPromptEnabled = normalized.endOfDayPromptEnabled
+  entry.historyEnabled = normalized.historyEnabled
+  entry.historyWindowDays = normalized.historyWindowDays
   entry.workdayHoursByDay = clone(normalized.workdayHoursByDay)
   return entry
 }

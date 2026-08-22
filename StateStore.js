@@ -48,12 +48,18 @@ function sessionPath(xdgStateHome, home) {
   return base === "" ? "" : base + "/intermission/session.json"
 }
 
+function historyPath(xdgStateHome, home) {
+  var base = stateHome(xdgStateHome, home)
+  return base === "" ? "" : base + "/intermission/history.json"
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     MAX_SNAPSHOT_LENGTH: MAX_SNAPSHOT_LENGTH,
     parseSnapshotText: parseSnapshotText,
     serializeSnapshot: serializeSnapshot,
     stateHome: stateHome,
-    sessionPath: sessionPath
+    sessionPath: sessionPath,
+    historyPath: historyPath
   }
 }
