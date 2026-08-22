@@ -324,6 +324,9 @@ summon may be reserved for the overlay lifecycle.
 
 ### Live acceptance checks
 
+The repeatable setup, scenario matrix, and evidence template live in the
+[Acceptance Guide](Acceptance.md).
+
 - install from a local checkout and confirm discovery/enabling;
 - verify start, warning, defer, skip, short break, and long break;
 - verify active-use time stops during idle and a natural break clears the due
@@ -349,7 +352,7 @@ Goal: prove the plugin contract and make every later change testable.
 
 - [x] [#1 — Scaffold Intermission as a Quattro root plugin](https://github.com/AndyBoWu/Intermission/issues/1)
 - [x] [#2 — Define config, runtime snapshot, and IPC contracts](https://github.com/AndyBoWu/Intermission/issues/2)
-- [ ] [#3 — Establish test and visual verification harness](https://github.com/AndyBoWu/Intermission/issues/3)
+- [x] [#3 — Establish test and visual verification harness](https://github.com/AndyBoWu/Intermission/issues/3)
 
 Exit criteria: the empty vertical slice is discoverable, validates, exposes
 the planned lifecycle, and has repeatable unit/shell/live test entry points.
