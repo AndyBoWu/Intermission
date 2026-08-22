@@ -24,17 +24,51 @@ the live test.
 
 ## 2. QML lint
 
-Run this in an Omarchy development environment that includes `qmllint`:
+Run this in an Omarchy development environment that includes the Qt
+declarative tools and Quickshell QML modules:
 
 ```sh
 OMARCHY_PATH=/path/to/omarchy npm run lint:qml
 ```
 
-The command checks every root QML entry point against the real Omarchy shell
-imports. A missing `qmllint` or shell checkout is a failure with an actionable
-message, not a silent skip.
+The command maps the checkout's `shell/Ui` and `shell/Commons` directories to
+their runtime module URIs, then checks every root QML entry point. Missing
+imports, types, inheritance, or `qmllint` are hard failures with actionable
+diagnostics. Context-property and other non-blocking warnings are counted
+without hiding import or type failures.
 
-## 3. Live setup
+Run the complete compatibility suite with:
+
+```sh
+OMARCHY_PATH=/path/to/omarchy npm run test:compatibility
+```
+
+In addition to manifest and QML checks, this command creates isolated negative
+probes and confirms that a missing manifest entry point and a broken QML import
+are both rejected. Missing validator sources are also a hard failure.
+
+## 3. Automated compatibility boundary
+
+`.github/workflows/compatibility.yml` exposes two deliberately separate jobs:
+
+- `Compatibility / Pinned baseline` runs on every pull request and manual
+  dispatch. It uses the immutable Arch container digest, the 2026-08-22 Arch
+  package archive, and Omarchy revision
+  `eca89f9518a95fbb279fcf55567d4d6df38e6d2e`.
+- `Compatibility / Quattro canary` runs weekly and on manual dispatch. It uses
+  current Arch packages and fetches the current Omarchy `quattro` head, then
+  reports the exact revision it tested.
+
+Both jobs report the runner image, container digest, Qt/QML tools, Quickshell
+version, and Omarchy revision. The pinned job is the reproducible merge gate;
+the canary makes upstream drift visible without making pull requests depend on
+a moving branch.
+
+Neither job starts a compositor. A hosted pass is not evidence for focus,
+pointer input, Wayland idle signals, suspend/resume, display hotplug, or visible
+multi-monitor behavior.
+
+## 4. Live setup
 
 Use a disposable user session or back up the current shell configuration.
 Install and enable the current checkout through the ordinary plugin workflow,
@@ -59,7 +93,7 @@ checks, preserve a disposable copy of that file, restart the shell in each
 phase listed below, verify the expected state, then restore or remove the copy.
 Never run destructive snapshot tests against a session you need to keep.
 
-## 4. Scenario matrix
+## 5. Scenario matrix
 
 Record the commit SHA, Omarchy version, monitor layout, and result for each
 scenario. Tickets add automation where practical; compositor-only behavior
@@ -101,7 +135,7 @@ remains a live acceptance check.
 | Theme and scale | Change theme and test common scale factors | Content stays readable and unclipped | #7 / #10 |
 | Plugin disable | Disable while the panel or overlay is open | All UI and exclusive focus disappear immediately | #8 / #10 |
 
-## 5. Visual evidence
+## 6. Visual evidence
 
 Capture evidence only after the scenario passes.
 
@@ -129,7 +163,7 @@ Evidence file:
 Result: PASS / FAIL
 ```
 
-## 6. Release check
+## 7. Release check
 
 The release candidate is not complete until these commands pass in an Omarchy
 development environment and every applicable M0–M2 scenario has recorded
@@ -137,5 +171,6 @@ evidence:
 
 ```sh
 npm run check
+npm run test:compatibility
 npm run test:live
 ```

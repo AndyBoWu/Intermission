@@ -227,8 +227,15 @@ The remaining checks require an Omarchy/Quickshell development environment:
 
 ```sh
 npm run lint:qml
+npm run test:compatibility
 npm run test:live
 ```
+
+`test:compatibility` runs the real Omarchy manifest validator and strict QML
+import/type lint, then proves that a missing manifest entry point and a broken
+QML import both fail. GitHub Actions runs the same suite against a frozen
+required baseline on pull requests and against the current Omarchy `quattro`
+branch on a weekly/manual canary.
 
 Run the live test only from an Omarchy session where this checkout is already
 installed and enabled. Current release evidence and environment limits are

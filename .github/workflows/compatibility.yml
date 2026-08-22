@@ -1,0 +1,114 @@
+name: Compatibility
+
+on:
+  # Keep this unfiltered so the pinned check has a stable, require-able name on
+  # every pull request, including safe forks. Relevant source changes therefore
+  # cannot bypass compatibility validation.
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 8 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compatibility-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  baseline:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    name: Compatibility / Pinned baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: archlinux:base@sha256:4bf33b21a715aac0b48ce6e9eaed4782a898eae96f88f5da3635572129c2584a
+    defaults:
+      run:
+        shell: bash
+    env:
+      ARCHIVE_DATE: 2026/08/22
+      OMARCHY_COMMIT: eca89f9518a95fbb279fcf55567d4d6df38e6d2e
+      QMLLINT_BIN: /usr/lib/qt6/bin/qmllint
+
+    steps:
+      - name: Install the frozen compatibility toolchain
+        run: |
+          printf '%s\n' "Server = https://archive.archlinux.org/repos/$ARCHIVE_DATE/\$repo/os/\$arch" \
+            > /etc/pacman.d/mirrorlist
+          pacman -Syu --noconfirm --needed \
+            ca-certificates git jq nodejs npm qt6-declarative quickshell
+
+      - name: Check out Intermission
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check out the pinned Omarchy baseline
+        run: |
+          omarchy_root="$RUNNER_TEMP/omarchy-$OMARCHY_COMMIT"
+          git init --quiet "$omarchy_root"
+          git -C "$omarchy_root" remote add origin https://github.com/basecamp/omarchy.git
+          git -C "$omarchy_root" fetch --quiet --depth=1 origin "$OMARCHY_COMMIT"
+          git -C "$omarchy_root" checkout --quiet --detach FETCH_HEAD
+          echo "OMARCHY_PATH=$omarchy_root" >> "$GITHUB_ENV"
+          echo "OMARCHY_REVISION=$(git -C "$omarchy_root" rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Report the tested baseline
+        run: |
+          printf 'runner=%s/%s image=%s/%s\n' \
+            "$RUNNER_OS" "$RUNNER_ARCH" "${ImageOS:-unknown}" "${ImageVersion:-unknown}"
+          printf 'container=archlinux:base@sha256:%s\n' \
+            4bf33b21a715aac0b48ce6e9eaed4782a898eae96f88f5da3635572129c2584a
+          printf 'archive=%s omarchy=%s\n' "$ARCHIVE_DATE" "$OMARCHY_REVISION"
+          pacman -Q qt6-declarative quickshell
+          "$QMLLINT_BIN" --version
+          quickshell --version
+
+      - name: Run pinned compatibility checks
+        run: npm run test:compatibility
+
+  canary:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    name: Compatibility / Quattro canary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: archlinux:base@sha256:4bf33b21a715aac0b48ce6e9eaed4782a898eae96f88f5da3635572129c2584a
+    defaults:
+      run:
+        shell: bash
+    env:
+      QMLLINT_BIN: /usr/lib/qt6/bin/qmllint
+
+    steps:
+      - name: Install the current compatibility toolchain
+        run: |
+          pacman -Syu --noconfirm --needed \
+            ca-certificates git jq nodejs npm qt6-declarative quickshell
+
+      - name: Check out Intermission
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check out the current Omarchy Quattro branch
+        run: |
+          omarchy_root="$RUNNER_TEMP/omarchy-quattro"
+          git init --quiet "$omarchy_root"
+          git -C "$omarchy_root" remote add origin https://github.com/basecamp/omarchy.git
+          git -C "$omarchy_root" fetch --quiet --depth=1 origin refs/heads/quattro
+          git -C "$omarchy_root" checkout --quiet --detach FETCH_HEAD
+          echo "OMARCHY_PATH=$omarchy_root" >> "$GITHUB_ENV"
+          echo "OMARCHY_REVISION=$(git -C "$omarchy_root" rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Report the tested canary
+        run: |
+          printf 'runner=%s/%s image=%s/%s\n' \
+            "$RUNNER_OS" "$RUNNER_ARCH" "${ImageOS:-unknown}" "${ImageVersion:-unknown}"
+          printf 'container=archlinux:base@sha256:%s\n' \
+            4bf33b21a715aac0b48ce6e9eaed4782a898eae96f88f5da3635572129c2584a
+          printf 'omarchy=%s\n' "$OMARCHY_REVISION"
+          pacman -Q qt6-declarative quickshell
+          "$QMLLINT_BIN" --version
+          quickshell --version
+
+      - name: Run Quattro canary compatibility checks
+        run: npm run test:compatibility
