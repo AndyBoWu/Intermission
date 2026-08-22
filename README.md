@@ -1,10 +1,9 @@
 # Intermission
 
 [![CI](https://github.com/AndyBoWu/Intermission/actions/workflows/ci.yml/badge.svg)](https://github.com/AndyBoWu/Intermission/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/AndyBoWu/Intermission/actions/workflows/codeql.yml/badge.svg)](https://github.com/AndyBoWu/Intermission/actions/workflows/codeql.yml)
 [![Compatibility](https://github.com/AndyBoWu/Intermission/actions/workflows/compatibility.yml/badge.svg)](https://github.com/AndyBoWu/Intermission/actions/workflows/compatibility.yml)
 [![Security](https://github.com/AndyBoWu/Intermission/actions/workflows/security.yml/badge.svg)](https://github.com/AndyBoWu/Intermission/actions/workflows/security.yml)
-[![Release](https://github.com/AndyBoWu/Intermission/actions/workflows/release.yml/badge.svg)](https://github.com/AndyBoWu/Intermission/actions/workflows/release.yml)
+[![Version](https://img.shields.io/github/v/release/AndyBoWu/Intermission)](https://github.com/AndyBoWu/Intermission/releases/latest)
 [![License](https://img.shields.io/github/license/AndyBoWu/Intermission)](LICENSE)
 
 Intermission is a local-only Omarchy Quattro plugin that tracks active use and
