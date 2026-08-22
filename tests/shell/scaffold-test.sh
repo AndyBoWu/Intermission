@@ -84,6 +84,12 @@ grep -Eq 'Keys\.onEscapePressed:[[:space:]]*root\.close' "$PROJECT_ROOT/Panel.qm
   || fail "control panel must expose Escape close"
 grep -Eq 'updateEntryInline' "$PROJECT_ROOT/Panel.qml" \
   || fail "control panel must persist inline settings"
+grep -Eq 'ButtonGroup[[:space:]]*\{' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must expose cadence presets"
+grep -Eq 'shortWorkIntervalSeconds' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must expose the short work interval"
+grep -Eq 'longWorkIntervalSeconds' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must expose the long work interval"
 grep -Eq 'summonBarWidget' "$PROJECT_ROOT/Service.qml" \
   || fail "service showPanel must route to a live bar widget"
 grep -Eq 'function stableIpcError\(error\)' "$PROJECT_ROOT/Service.qml" \

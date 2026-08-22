@@ -116,14 +116,37 @@ test("snooze creates an accountable deadline and returns to warning", () => {
 });
 
 test("skip records an effect and advances cadence instead of losing the break", () => {
-  const options = settings();
+  const options = settings({
+    shortWorkIntervalSeconds: 100,
+    longWorkIntervalSeconds: 200,
+    cyclesBeforeLong: 2
+  });
   const warning = atWarning(options);
   const skipped = Engine.transition(warning, { type: "skip", reason: "user" }, 91 * SECOND, options);
   assert(skipped.ok);
   assertEqual(skipped.state.phase, "active");
   assertEqual(skipped.state.cycleIndex, 1);
+  assertEqual(skipped.state.breakKind, "long");
+  assertEqual(skipped.state.workTargetMs, 200 * SECOND);
   assertEqual(skipped.effects[0].type, "break-skipped");
   assertEqual(skipped.effects[0].breakKind, "short");
+});
+
+test("a natural break advances into the correct long-work target", () => {
+  const options = settings({
+    shortWorkIntervalSeconds: 100,
+    longWorkIntervalSeconds: 200,
+    cyclesBeforeLong: 2
+  });
+  const idle = Engine.transition(started(0, options), { type: "enterIdle" }, 10 * SECOND, options).state;
+  const natural = Engine.transition(idle, {
+    type: "naturalBreak",
+    durationMs: 120 * SECOND
+  }, 130 * SECOND, options);
+  assert(natural.ok);
+  assertEqual(natural.state.cycleIndex, 1);
+  assertEqual(natural.state.breakKind, "long");
+  assertEqual(natural.state.workTargetMs, 200 * SECOND);
 });
 
 test("manual break and completion use the same cadence transition", () => {
@@ -165,6 +188,36 @@ test("four work cycles end with a long break", () => {
   assertEqual(state.breakKind, "long");
   const longBreak = Engine.transition(state, { type: "startBreak" }, now + SECOND, options).state;
   assertEqual(longBreak.breakDurationMs, 60 * SECOND);
+});
+
+test("short and long cadence rounds capture independent work targets", () => {
+  const options = settings({
+    shortWorkIntervalSeconds: 100,
+    longWorkIntervalSeconds: 200,
+    cyclesBeforeLong: 2
+  });
+  let state = started(0, options);
+  assertEqual(state.breakKind, "short");
+  assertEqual(state.workTargetMs, 100 * SECOND);
+
+  state = Engine.transition(state, { type: "startBreak" }, SECOND, options).state;
+  state = Engine.transition(state, { type: "completeBreak" }, 21 * SECOND, options).state;
+  assertEqual(state.breakKind, "long");
+  assertEqual(state.workTargetMs, 200 * SECOND);
+});
+
+test("deferring keeps cadence pending until the break is consumed", () => {
+  const options = settings();
+  const warning = atWarning(options);
+  const deferred = Engine.transition(warning, { type: "snooze", seconds: 60 }, 91 * SECOND, options);
+  assertEqual(deferred.state.cycleIndex, 0);
+  assertEqual(deferred.state.breakKind, "short");
+
+  const due = Engine.transition(deferred.state, { type: "tick" }, 151 * SECOND, options).state;
+  const activeBreak = Engine.transition(due, { type: "startBreak" }, 152 * SECOND, options).state;
+  const completed = Engine.transition(activeBreak, { type: "completeBreak" }, 172 * SECOND, options);
+  assertEqual(completed.state.cycleIndex, 1);
+  assertEqual(completed.effects[0].type, "break-completed");
 });
 
 test("repeated idempotent actions do not create new revisions", () => {
@@ -338,6 +391,28 @@ test("active break restores while an expired break completes", () => {
   const expired = Engine.restoreState(activeBreak, 31 * SECOND, options);
   assertEqual(expired.state.phase, "active");
   assertEqual(expired.effects[0].type, "break-completed");
+});
+
+test("recovery preserves a captured long-work target across settings changes", () => {
+  const options = settings({
+    shortWorkIntervalSeconds: 100,
+    longWorkIntervalSeconds: 200,
+    cyclesBeforeLong: 2
+  });
+  let state = started(0, options);
+  state = Engine.transition(state, { type: "startBreak" }, SECOND, options).state;
+  state = Engine.transition(state, { type: "completeBreak" }, 21 * SECOND, options).state;
+  const snapshot = Engine.snapshotState(state, 31 * SECOND);
+
+  const restored = Engine.restoreState(snapshot, 41 * SECOND, settings({
+    shortWorkIntervalSeconds: 60,
+    longWorkIntervalSeconds: 60,
+    cyclesBeforeLong: 2
+  }));
+  assert(restored.ok);
+  assertEqual(restored.state.breakKind, "long");
+  assertEqual(restored.state.workTargetMs, 200 * SECOND);
+  assertEqual(Engine.publicState(restored.state, 51 * SECOND, options).remainingSeconds, 180);
 });
 
 test("completing a long break resets the cadence", () => {

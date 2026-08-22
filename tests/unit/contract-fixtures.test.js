@@ -12,6 +12,9 @@ test("settings fixture exposes the version 1 cadence defaults", () => {
   const settings = fixture("settings.v1.json");
   assertEqual(settings.configVersion, 1);
   assertEqual(settings.workIntervalSeconds, 1200);
+  assertEqual(settings.shortWorkIntervalSeconds, 1200);
+  assertEqual(settings.longWorkIntervalSeconds, 1200);
+  assertEqual(settings.presetId, "balanced");
   assertEqual(settings.shortBreakSeconds, 20);
   assertEqual(settings.longBreakSeconds, 180);
   assertEqual(settings.cyclesBeforeLong, 4);

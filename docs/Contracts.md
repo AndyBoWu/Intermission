@@ -33,7 +33,10 @@ Example: [`contracts/settings.v1.json`](contracts/settings.v1.json)
 | --- | --- | ---: | --- |
 | `configVersion` | integer | `1` | exactly `1` |
 | `autoStart` | boolean | `true` | `true` or `false` |
-| `workIntervalSeconds` | integer | `1200` | `60`–`14400` |
+| `presetId` | string | `balanced` | `balanced`, `frequent`, `spacious`, or `custom` |
+| `workIntervalSeconds` | integer | `1200` | Legacy fallback for both work intervals |
+| `shortWorkIntervalSeconds` | integer | `1200` | `60`–`14400` |
+| `longWorkIntervalSeconds` | integer | `1200` | `60`–`14400` |
 | `shortBreakSeconds` | integer | `20` | `10`–`900` |
 | `longBreakSeconds` | integer | `180` | `30`–`3600` |
 | `cyclesBeforeLong` | integer | `4` | `1`–`12` |
@@ -47,6 +50,11 @@ Example: [`contracts/settings.v1.json`](contracts/settings.v1.json)
 
 - Values are type-checked; numeric strings are not coerced.
 - A missing or invalid field uses its default independently of other fields.
+- A legacy `workIntervalSeconds` value supplies both work intervals when the
+  newer fields are absent. Saves retain it as a short-interval compatibility
+  value while also writing both explicit fields.
+- Named presets update both work intervals, both break durations, and the
+  short-cycle count together. Editing any of those fields records `custom`.
 - Unknown fields are ignored at runtime and preserved when settings are
   written, so a newer configuration is not silently destroyed.
 - Changing cadence settings applies to the next work or break phase. The
