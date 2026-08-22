@@ -3,6 +3,8 @@ var BREAK_KINDS = ["short", "long"]
 
 var DEFAULT_SETTINGS = {
   workIntervalSeconds: 1200,
+  shortWorkIntervalSeconds: 1200,
+  longWorkIntervalSeconds: 1200,
   shortBreakSeconds: 20,
   longBreakSeconds: 180,
   cyclesBeforeLong: 4,
@@ -26,8 +28,16 @@ function integerSetting(value, fallback, minimum, maximum) {
 
 function normalizeSettings(raw) {
   var value = isObject(raw) ? raw : {}
+  var legacyWork = integerSetting(
+    value.workIntervalSeconds,
+    DEFAULT_SETTINGS.workIntervalSeconds,
+    60,
+    14400
+  )
   return {
-    workIntervalSeconds: integerSetting(value.workIntervalSeconds, DEFAULT_SETTINGS.workIntervalSeconds, 60, 14400),
+    workIntervalSeconds: integerSetting(value.shortWorkIntervalSeconds, legacyWork, 60, 14400),
+    shortWorkIntervalSeconds: integerSetting(value.shortWorkIntervalSeconds, legacyWork, 60, 14400),
+    longWorkIntervalSeconds: integerSetting(value.longWorkIntervalSeconds, legacyWork, 60, 14400),
     shortBreakSeconds: integerSetting(value.shortBreakSeconds, DEFAULT_SETTINGS.shortBreakSeconds, 10, 900),
     longBreakSeconds: integerSetting(value.longBreakSeconds, DEFAULT_SETTINGS.longBreakSeconds, 30, 3600),
     cyclesBeforeLong: integerSetting(value.cyclesBeforeLong, DEFAULT_SETTINGS.cyclesBeforeLong, 1, 12),
@@ -49,6 +59,12 @@ function breakDurationMs(kind, settings) {
   return (kind === "long" ? settings.longBreakSeconds : settings.shortBreakSeconds) * 1000
 }
 
+function workTargetMs(kind, settings) {
+  return (kind === "long"
+    ? settings.longWorkIntervalSeconds
+    : settings.shortWorkIntervalSeconds) * 1000
+}
+
 function createState(now, rawSettings) {
   var settings = normalizeSettings(rawSettings)
   var timestamp = isFiniteNumber(now) && now >= 0 ? Math.floor(now) : 0
@@ -60,7 +76,7 @@ function createState(now, rawSettings) {
     phaseEnteredAtEpochMs: timestamp,
     activeElapsedMs: 0,
     activeStartedAtEpochMs: null,
-    workTargetMs: settings.workIntervalSeconds * 1000,
+    workTargetMs: workTargetMs("short", settings),
     breakKind: null,
     cycleIndex: 0,
     warningStartedAtEpochMs: null,
@@ -152,7 +168,7 @@ function freshActive(state, now, settings, cycleIndex, effects) {
   var next = changedState(state, now, "active", {
     activeElapsedMs: 0,
     activeStartedAtEpochMs: now,
-    workTargetMs: settings.workIntervalSeconds * 1000,
+    workTargetMs: workTargetMs(kind, settings),
     breakKind: kind,
     cycleIndex: cycleIndex,
     warningStartedAtEpochMs: null,
@@ -179,7 +195,7 @@ function freshIdle(state, now, settings, effects, actualDurationMs) {
     phaseEnteredAtEpochMs: now,
     activeElapsedMs: 0,
     activeStartedAtEpochMs: null,
-    workTargetMs: settings.workIntervalSeconds * 1000,
+    workTargetMs: workTargetMs(kind, settings),
     breakKind: kind,
     cycleIndex: cycleIndex,
     warningStartedAtEpochMs: null,

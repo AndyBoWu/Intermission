@@ -22,11 +22,23 @@ test("break view clamps remaining progress to a safe fraction", () => {
 });
 
 test("break view exposes one concise instruction for each break kind", () => {
-  const shortBreak = BreakView.presentation("short");
-  const longBreak = BreakView.presentation("long");
+  const shortBreak = BreakView.presentation("short", 0);
+  const longBreak = BreakView.presentation("long", 0);
   assert(shortBreak.title !== longBreak.title);
   assert(shortBreak.instruction.length > 0 && shortBreak.instruction.length < 80);
   assert(longBreak.instruction.length > 0 && longBreak.instruction.length < 80);
+});
+
+test("the default cadence rotates guidance across three short breaks and one long break", () => {
+  const keys = [
+    BreakView.presentation("short", 0).key,
+    BreakView.presentation("short", 1).key,
+    BreakView.presentation("short", 2).key,
+    BreakView.presentation("long", 3).key
+  ];
+  assertDeepEqual(keys, ["eyes", "stand", "stretch", "hydrate"]);
+  assertEqual(BreakView.presentation("short", 4).key, "eyes");
+  assert(BreakView.presentation("long", 2).instruction.length < 80);
 });
 
 test("break overlay follows the focused screen on every open", () => {

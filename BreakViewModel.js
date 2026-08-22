@@ -3,6 +3,29 @@ var FALLBACK_SETTINGS = {
   longBreakSeconds: 180
 }
 
+var ROUTINES = [
+  {
+    key: "eyes",
+    short: { title: "A moment for your eyes", instruction: "Look across the room and let your focus soften." },
+    long: { title: "Rest your eyes", instruction: "Step away from the screen and focus on something distant." }
+  },
+  {
+    key: "stand",
+    short: { title: "Change your posture", instruction: "Stand up and settle your weight evenly for a few breaths." },
+    long: { title: "Time to stand", instruction: "Stand up and walk a few slow laps away from the screen." }
+  },
+  {
+    key: "stretch",
+    short: { title: "Loosen up", instruction: "Roll your shoulders and gently loosen your wrists." },
+    long: { title: "Time to stretch", instruction: "Open your chest, stretch your shoulders, and loosen your wrists." }
+  },
+  {
+    key: "hydrate",
+    short: { title: "Take a sip", instruction: "Take a sip of water and relax your jaw." },
+    long: { title: "Time to hydrate", instruction: "Refill your water and take a few unhurried sips." }
+  }
+]
+
 function kindOf(value) {
   return value === "long" ? "long" : "short"
 }
@@ -33,18 +56,20 @@ function remainingFraction(remaining, total) {
   return Math.max(0, Math.min(1, safeSeconds(remaining) / duration))
 }
 
-function presentation(kind) {
-  if (kindOf(kind) === "long") {
-    return {
-      eyebrow: "Long intermission",
-      title: "Time to move",
-      instruction: "Stand up, stretch gently, and take a sip of water."
-    }
-  }
+function routineIndex(cycleIndex) {
+  var value = Number(cycleIndex)
+  return Number.isInteger(value) && value >= 0 ? value % ROUTINES.length : 0
+}
+
+function presentation(kind, cycleIndex) {
+  var breakKind = kindOf(kind)
+  var routine = ROUTINES[routineIndex(cycleIndex)]
+  var copy = routine[breakKind]
   return {
-    eyebrow: "Short intermission",
-    title: "A moment for your eyes",
-    instruction: "Look across the room and let your focus soften."
+    key: routine.key,
+    eyebrow: breakKind === "long" ? "Long intermission" : "Short intermission",
+    title: copy.title,
+    instruction: copy.instruction
   }
 }
 
@@ -64,10 +89,12 @@ function focusScreenName(screenNames, currentName, focusedName, preferFocused) {
 if (typeof module !== "undefined") {
   module.exports = {
     FALLBACK_SETTINGS: FALLBACK_SETTINGS,
+    ROUTINES: ROUTINES,
     kindOf: kindOf,
     formatRemaining: formatRemaining,
     totalSeconds: totalSeconds,
     remainingFraction: remainingFraction,
+    routineIndex: routineIndex,
     presentation: presentation,
     focusScreenName: focusScreenName
   }

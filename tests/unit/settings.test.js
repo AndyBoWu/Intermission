@@ -17,6 +17,8 @@ test("settings normalize every field independently", () => {
 
   assertEqual(normalized.autoStart, false);
   assertEqual(normalized.workIntervalSeconds, 600);
+  assertEqual(normalized.shortWorkIntervalSeconds, 600);
+  assertEqual(normalized.longWorkIntervalSeconds, 600);
   assertEqual(normalized.shortBreakSeconds, Settings.DEFAULTS.shortBreakSeconds);
   assertEqual(normalized.longBreakSeconds, 240);
   assertEqual(normalized.cyclesBeforeLong, Settings.DEFAULTS.cyclesBeforeLong);
@@ -44,7 +46,8 @@ test("explicit saves preserve unknown fields and write normalized version one", 
     workIntervalSeconds: 1200
   };
   const form = Settings.formFromSettings(existing);
-  form.workIntervalSeconds = 1500;
+  form.shortWorkIntervalSeconds = 1500;
+  form.longWorkIntervalSeconds = 2100;
   form.autoStart = false;
 
   const entry = Settings.entryFromForm(existing, form, Settings.PLUGIN_ID);
@@ -52,8 +55,27 @@ test("explicit saves preserve unknown fields and write normalized version one", 
   assertEqual(entry.configVersion, 1);
   assertEqual(entry.customThemeHint, "calm");
   assertEqual(entry.workIntervalSeconds, 1500);
+  assertEqual(entry.shortWorkIntervalSeconds, 1500);
+  assertEqual(entry.longWorkIntervalSeconds, 2100);
+  assertEqual(entry.presetId, "custom");
   assertEqual(entry.autoStart, false);
   assertEqual(entry.naturalBreakSeconds, Settings.DEFAULTS.naturalBreakSeconds);
+});
+
+test("named cadence presets apply atomically and persist their identity", () => {
+  const frequent = Settings.applyPreset({}, "frequent");
+  assertEqual(frequent.presetId, "frequent");
+  assertEqual(frequent.shortWorkIntervalSeconds, 900);
+  assertEqual(frequent.longWorkIntervalSeconds, 900);
+  assertEqual(frequent.longBreakSeconds, 120);
+
+  frequent.longWorkIntervalSeconds = 1200;
+  assertEqual(Settings.matchingPreset(frequent), "custom");
+
+  const entry = Settings.entryFromForm({}, Settings.applyPreset({}, "spacious"), Settings.PLUGIN_ID);
+  assertEqual(entry.presetId, "spacious");
+  assertEqual(entry.shortWorkIntervalSeconds, 1800);
+  assertEqual(entry.longWorkIntervalSeconds, 2400);
 });
 
 test("service startup finds the inline bar entry before plugin fallback", () => {

@@ -68,7 +68,8 @@ remains a live acceptance check.
 | Bar lifecycle | Click, summon panel when available, press Escape, use shell hide | One responsive widget per bar; close paths agree | #6 |
 | Idle boundary | Cross just below and just above the configured idle threshold | Active time pauses; only qualifying idle becomes a natural break | #5 |
 | Warning | Accelerate the work target and enter warning | Start, defer, and skip are keyboard and pointer accessible | #4 / #6 |
-| Short break | Start a short break with accelerated settings | Correct instruction and countdown; completion advances cadence | #7 / #9 |
+| Short break | Start a short break with accelerated settings | Rotating instruction and countdown are correct; completion advances cadence | #7 / #9 |
+| Dual cadence | Apply a named preset, accelerate a short-to-long sequence, then reload | Each work target and break duration matches its type; the preset persists | #9 |
 | Long break | Complete the configured short-cycle count | Long routine and duration replace the short routine | #9 |
 | Emergency exit | Hold Escape for the configured duration | Every overlay closes within one second and state remains recoverable | #8 |
 | Shell restart | Restart during active, warning, deferred, break, and paused phases | Recovery follows the version 1 contract with no surprise overlay | #8 |

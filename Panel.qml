@@ -43,7 +43,15 @@ Panel {
     var next = {}
     for (var key in root.form) next[key] = root.form[key]
     next[name] = value
+    if (Settings.PRESET_FIELDS.indexOf(name) !== -1)
+      next.presetId = Settings.matchingPreset(next)
     root.form = next
+    root.dirty = true
+    root.saveMessage = ""
+  }
+
+  function applyPreset(presetId) {
+    root.form = Settings.applyPreset(root.form, presetId)
     root.dirty = true
     root.saveMessage = ""
   }
@@ -279,6 +287,29 @@ Panel {
             fontFamily: root.contentFontFamily
           }
 
+          Text {
+            width: parent.width
+            text: root.form.presetId === "custom"
+              ? "Custom timing"
+              : "Choose a starting rhythm, then adjust any field if needed."
+            color: Qt.darker(root.contentForeground, 1.3)
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          ButtonGroup {
+            options: [
+              { value: "balanced", label: "Balanced" },
+              { value: "frequent", label: "Frequent" },
+              { value: "spacious", label: "Spacious" }
+            ]
+            value: root.form.presetId
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+            onChanged: function(value) { root.applyPreset(value) }
+          }
+
           Grid {
             id: rhythmGrid
             width: parent.width
@@ -290,12 +321,21 @@ Panel {
 
             NumberField {
               width: rhythmGrid.cellWidth
-              label: "Work interval (seconds)"
+              label: "Before short break (seconds)"
               from: 60; to: 14400; stepSize: 60
-              value: root.form.workIntervalSeconds
+              value: root.form.shortWorkIntervalSeconds
               foreground: root.contentForeground
               fontFamily: root.contentFontFamily
-              onModified: function(v) { root.setFormValue("workIntervalSeconds", v) }
+              onModified: function(v) { root.setFormValue("shortWorkIntervalSeconds", v) }
+            }
+            NumberField {
+              width: rhythmGrid.cellWidth
+              label: "Before long break (seconds)"
+              from: 60; to: 14400; stepSize: 60
+              value: root.form.longWorkIntervalSeconds
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              onModified: function(v) { root.setFormValue("longWorkIntervalSeconds", v) }
             }
             NumberField {
               width: rhythmGrid.cellWidth

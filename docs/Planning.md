@@ -376,7 +376,7 @@ demonstrable release candidate.
 
 - [x] [#7 — Build the multi-monitor break overlay](https://github.com/AndyBoWu/Intermission/issues/7)
 - [x] [#8 — Add safe enforcement and lifecycle recovery](https://github.com/AndyBoWu/Intermission/issues/8)
-- [ ] [#9 — Add dual-cadence break routines](https://github.com/AndyBoWu/Intermission/issues/9)
+- [x] [#9 — Add dual-cadence break routines](https://github.com/AndyBoWu/Intermission/issues/9)
 - [ ] [#10 — Finalize accessibility, documentation, and release evidence](https://github.com/AndyBoWu/Intermission/issues/10)
 
 Exit criteria: M0-M2 acceptance checks pass on a real Omarchy session, the
