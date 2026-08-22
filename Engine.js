@@ -100,7 +100,8 @@ function changedState(state, now, phase, patch) {
   next.phase = phase
   next.revision = state.revision + 1
   next.savedAtEpochMs = now
-  if (phase !== previousPhase) next.phaseEnteredAtEpochMs = now
+  if (phase !== previousPhase && values.phaseEnteredAtEpochMs === undefined)
+    next.phaseEnteredAtEpochMs = now
   return next
 }
 
@@ -118,6 +119,8 @@ function publicState(state, now, rawSettings) {
 
   if (state.phase === "active") {
     remaining = Math.max(0, state.workTargetMs - activeElapsedMs(state, timestamp))
+  } else if (state.phase === "idle") {
+    remaining = Math.max(0, state.workTargetMs - state.activeElapsedMs)
   } else if (state.phase === "warning") {
     var warningStarted = isFiniteNumber(state.warningStartedAtEpochMs)
       ? state.warningStartedAtEpochMs : timestamp
@@ -159,6 +162,35 @@ function freshActive(state, now, settings, cycleIndex, effects) {
     resumePhase: null
   })
   return success(next, true, effects)
+}
+
+function freshIdle(state, now, settings, effects, actualDurationMs) {
+  var cycleIndex = nextCycle(state, settings)
+  var kind = breakKindForCycle(cycleIndex, settings)
+  var effect = {
+    type: "break-natural",
+    atEpochMs: now,
+    breakKind: state.breakKind,
+    scheduledDurationMs: state.breakDurationMs,
+    actualDurationMs: actualDurationMs,
+    source: "idle"
+  }
+  var next = changedState(state, now, "idle", {
+    phaseEnteredAtEpochMs: now,
+    activeElapsedMs: 0,
+    activeStartedAtEpochMs: null,
+    workTargetMs: settings.workIntervalSeconds * 1000,
+    breakKind: kind,
+    cycleIndex: cycleIndex,
+    warningStartedAtEpochMs: null,
+    deferredUntilEpochMs: null,
+    breakStartedAtEpochMs: null,
+    breakDurationMs: breakDurationMs(kind, settings),
+    resumePhase: null
+  })
+  var allEffects = effects ? effects.slice() : []
+  allEffects.push(effect)
+  return success(next, true, allEffects)
 }
 
 function nextCycle(state, settings) {
@@ -269,9 +301,14 @@ function transition(inputState, event, now, rawSettings) {
   if (type === "enterIdle") {
     if (state.phase === "idle") return success(state, false)
     if (state.phase !== "active") return failure(state, "INVALID_STATE", "Idle entry requires active work")
+    var idleStartedAt = event.startedAtEpochMs === undefined ? now : event.startedAtEpochMs
+    if (!Number.isInteger(idleStartedAt) || idleStartedAt < state.activeStartedAtEpochMs || idleStartedAt > now)
+      return failure(state, "INVALID_ARGUMENT", "Idle start must fall inside the active segment")
     return success(changedState(state, now, "idle", {
-      activeElapsedMs: activeElapsedMs(state, now),
-      activeStartedAtEpochMs: null
+      phaseEnteredAtEpochMs: idleStartedAt,
+      activeElapsedMs: activeElapsedMs(state, idleStartedAt),
+      activeStartedAtEpochMs: null,
+      resumePhase: null
     }), true)
   }
 
@@ -314,6 +351,19 @@ function transition(inputState, event, now, rawSettings) {
     })
   }
 
+  if (type === "naturalBreak") {
+    var naturalFromIdle = state.phase === "idle"
+    var naturalFromIdlePause = state.phase === "paused" &&
+      (state.resumePhase === "warning" || state.resumePhase === "deferred") && event.idle === true
+    if (!naturalFromIdle && !naturalFromIdlePause)
+      return failure(state, "INVALID_STATE", "A natural break requires observed idle time")
+    var naturalDuration = event.durationMs === undefined
+      ? Math.max(0, now - state.phaseEnteredAtEpochMs) : event.durationMs
+    if (!Number.isInteger(naturalDuration) || naturalDuration < settings.naturalBreakSeconds * 1000)
+      return failure(state, "INVALID_ARGUMENT", "Natural break duration is below the configured threshold")
+    return freshIdle(state, now, settings, [], naturalDuration)
+  }
+
   if (type === "tick") {
     if (state.phase === "active") {
       var elapsed = activeElapsedMs(state, now)
@@ -354,6 +404,13 @@ function transition(inputState, event, now, rawSettings) {
           source: "timer",
           actualDurationMs: state.breakDurationMs
         })
+      return success(state, false)
+    }
+
+    if (state.phase === "idle") {
+      var idleDuration = Math.max(0, now - state.phaseEnteredAtEpochMs)
+      if (state.activeElapsedMs > 0 && idleDuration >= settings.naturalBreakSeconds * 1000)
+        return freshIdle(state, now, settings, [], idleDuration)
       return success(state, false)
     }
 
@@ -483,11 +540,15 @@ function restoreState(snapshot, now, rawSettings) {
   }
 
   if (state.phase === "active" || state.phase === "idle") {
-    if (downtime >= settings.naturalBreakSeconds * 1000)
+    if (downtime >= settings.naturalBreakSeconds * 1000 && state.phase === "active")
       return finishBreakCycle(state, now, settings, "break-natural", {
         source: "recovery",
         actualDurationMs: downtime
       })
+
+    if (downtime >= settings.naturalBreakSeconds * 1000 && state.phase === "idle" &&
+        state.activeElapsedMs > 0)
+      return freshIdle(state, now, settings, [], downtime)
 
     var restoredPhase = state.phase
     var elapsed = state.activeElapsedMs
@@ -502,14 +563,216 @@ function restoreState(snapshot, now, rawSettings) {
   return recoveryFailure(now, settings, "INVALID_SNAPSHOT", "Snapshot phase cannot be restored")
 }
 
+function createActivityContext(now) {
+  var timestamp = Number.isInteger(now) && now >= 0 ? now : 0
+  return {
+    isIdle: false,
+    idleSinceEpochMs: null,
+    pausedForIdle: false,
+    lastObservedAtEpochMs: timestamp
+  }
+}
+
+function activitySuccess(state, context, changed, effects) {
+  return {
+    ok: true,
+    changed: changed === true,
+    state: state,
+    context: context,
+    effects: effects || [],
+    error: null
+  }
+}
+
+function shiftTimestamp(value, delta) {
+  return value === null ? null : value + delta
+}
+
+function rebaseClock(state, context, now) {
+  var previous = context.lastObservedAtEpochMs
+  var delta = now - previous
+  var nextState = clone(state)
+  var nextContext = clone(context)
+
+  nextState.phaseEnteredAtEpochMs = shiftTimestamp(nextState.phaseEnteredAtEpochMs, delta)
+  nextState.activeStartedAtEpochMs = shiftTimestamp(nextState.activeStartedAtEpochMs, delta)
+  nextState.warningStartedAtEpochMs = shiftTimestamp(nextState.warningStartedAtEpochMs, delta)
+  nextState.deferredUntilEpochMs = shiftTimestamp(nextState.deferredUntilEpochMs, delta)
+  nextState.breakStartedAtEpochMs = shiftTimestamp(nextState.breakStartedAtEpochMs, delta)
+  nextState.savedAtEpochMs = now
+  nextState.revision = state.revision + 1
+
+  nextContext.idleSinceEpochMs = shiftTimestamp(nextContext.idleSinceEpochMs, delta)
+  nextContext.lastObservedAtEpochMs = now
+  return activitySuccess(nextState, nextContext, true, [{
+    type: "clock-rebased",
+    atEpochMs: now,
+    deltaMs: delta
+  }])
+}
+
+function prepareActivityObservation(state, context, now) {
+  if (!Number.isInteger(now) || now < 0) {
+    return {
+      ok: false,
+      changed: false,
+      state: clone(state),
+      context: clone(context),
+      effects: [],
+      error: { code: "INVALID_ARGUMENT", message: "Observation time must be a non-negative integer" }
+    }
+  }
+
+  if (now < context.lastObservedAtEpochMs) return rebaseClock(state, context, now)
+  return activitySuccess(clone(state), clone(context), false)
+}
+
+function appendTransition(result, transitionResult) {
+  if (!transitionResult.ok) {
+    result.ok = false
+    result.error = transitionResult.error
+    return result
+  }
+  result.state = transitionResult.state
+  result.changed = result.changed || transitionResult.changed
+  result.effects = result.effects.concat(transitionResult.effects)
+  return result
+}
+
+function satisfyNaturalBreak(result, now, settings) {
+  var idleSince = result.context.idleSinceEpochMs
+  if (!Number.isInteger(idleSince)) return result
+  var duration = Math.max(0, now - idleSince)
+  if (duration < settings.naturalBreakSeconds * 1000) return result
+
+  if (result.state.phase === "idle" && result.state.activeElapsedMs > 0) {
+    return appendTransition(result, transition(result.state, {
+      type: "naturalBreak",
+      durationMs: duration,
+      idle: true
+    }, now, settings))
+  }
+
+  if (result.context.pausedForIdle && result.state.phase === "paused") {
+    var natural = transition(result.state, {
+      type: "naturalBreak",
+      durationMs: duration,
+      idle: true
+    }, now, settings)
+    appendTransition(result, natural)
+    if (natural.ok) result.context.pausedForIdle = false
+  }
+  return result
+}
+
+function beginObservedIdle(result, now, idleSince, settings) {
+  if (result.state.phase === "active")
+    idleSince = Math.max(result.state.activeStartedAtEpochMs, idleSince)
+  result.context.isIdle = true
+  result.context.idleSinceEpochMs = idleSince
+
+  if (result.state.phase === "active") {
+    appendTransition(result, transition(result.state, {
+      type: "enterIdle",
+      startedAtEpochMs: Math.max(result.state.activeStartedAtEpochMs, idleSince)
+    }, now, settings))
+  } else if (result.state.phase === "warning" || result.state.phase === "deferred") {
+    var pauseAt = Math.max(result.state.savedAtEpochMs, idleSince)
+    appendTransition(result, transition(result.state, { type: "pause" }, pauseAt, settings))
+    if (result.ok) result.context.pausedForIdle = true
+  }
+
+  return satisfyNaturalBreak(result, now, settings)
+}
+
+function endObservedIdle(result, now, settings) {
+  satisfyNaturalBreak(result, now, settings)
+  result.context.isIdle = false
+  result.context.idleSinceEpochMs = null
+
+  if (result.state.phase === "idle") {
+    appendTransition(result, transition(result.state, { type: "returnActive" }, now, settings))
+  } else if (result.context.pausedForIdle && result.state.phase === "paused") {
+    appendTransition(result, transition(result.state, { type: "resume" }, now, settings))
+  }
+  result.context.pausedForIdle = false
+  return result
+}
+
+function activitySignal(inputState, inputContext, isIdle, now, monitorTimeoutMs, rawSettings) {
+  var settings = normalizeSettings(rawSettings)
+  var prepared = prepareActivityObservation(inputState, inputContext, now)
+  if (!prepared.ok) return prepared
+
+  var timeout = Number.isInteger(monitorTimeoutMs) && monitorTimeoutMs >= 0 ? monitorTimeoutMs : 0
+  var requestedIdle = isIdle === true
+  if (requestedIdle === prepared.context.isIdle) {
+    if (requestedIdle) satisfyNaturalBreak(prepared, now, settings)
+    prepared.context.lastObservedAtEpochMs = now
+    return prepared
+  }
+
+  if (requestedIdle) {
+    var idleSince = Math.max(0, now - timeout)
+    beginObservedIdle(prepared, now, idleSince, settings)
+  } else {
+    endObservedIdle(prepared, now, settings)
+  }
+  prepared.context.lastObservedAtEpochMs = now
+  return prepared
+}
+
+function heartbeat(inputState, inputContext, now, rawSettings, rawOptions) {
+  var settings = normalizeSettings(rawSettings)
+  var options = isObject(rawOptions) ? rawOptions : {}
+  var expectedIntervalMs = integerSetting(options.expectedIntervalMs, 1000, 100, 60000)
+  var suspensionThresholdMs = integerSetting(options.suspensionThresholdMs, 5000,
+    expectedIntervalMs + 1, 300000)
+  var previousObserved = inputContext.lastObservedAtEpochMs
+  var prepared = prepareActivityObservation(inputState, inputContext, now)
+  if (!prepared.ok) return prepared
+
+  if (now < previousObserved) return prepared
+
+  var gap = now - previousObserved
+  if (!prepared.context.isIdle && gap >= suspensionThresholdMs) {
+    var idleSince = Math.min(now, previousObserved + expectedIntervalMs)
+    beginObservedIdle(prepared, now, idleSince, settings)
+    endObservedIdle(prepared, now, settings)
+    if (prepared.state.phase === "break")
+      appendTransition(prepared, transition(prepared.state, { type: "tick" }, now, settings))
+    prepared.effects.unshift({ type: "activity-gap", atEpochMs: now, durationMs: now - idleSince })
+  } else if (prepared.context.isIdle) {
+    if (prepared.state.phase === "break") {
+      appendTransition(prepared, transition(prepared.state, { type: "tick" }, now, settings))
+      if (prepared.state.phase === "active") {
+        appendTransition(prepared, transition(prepared.state, {
+          type: "enterIdle",
+          startedAtEpochMs: now
+        }, now, settings))
+      }
+    } else {
+      satisfyNaturalBreak(prepared, now, settings)
+    }
+  } else {
+    appendTransition(prepared, transition(prepared.state, { type: "tick" }, now, settings))
+  }
+
+  prepared.context.lastObservedAtEpochMs = now
+  return prepared
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     PHASES: PHASES,
     DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     normalizeSettings: normalizeSettings,
     createState: createState,
+    createActivityContext: createActivityContext,
     publicState: publicState,
     transition: transition,
-    restoreState: restoreState
+    restoreState: restoreState,
+    activitySignal: activitySignal,
+    heartbeat: heartbeat
   }
 }
