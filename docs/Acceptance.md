@@ -81,11 +81,12 @@ npm run test:live
 ```
 
 `test:live` is intentionally non-installing. It requires the plugin to be
-present and enabled, starts an accelerated break through the service, verifies
-the automatic overlay, exercises idempotent hide and reopen IPC, completes the
-break, and always attempts cleanup if the command fails. Close checks use a
-one-second bound. It verifies shell lifecycle and IPC routing, not visible
-pixels or compositor focus behavior.
+present and enabled, resets the disposable cadence to a fresh active test
+cycle, starts an accelerated break through the service, verifies the automatic
+overlay, exercises idempotent hide and reopen IPC, completes the break, and
+always attempts cleanup if the command fails. Close checks use a one-second
+bound. It verifies shell lifecycle and IPC routing, not visible pixels or
+compositor focus behavior.
 
 Runtime recovery uses
 `${XDG_STATE_HOME:-~/.local/state}/intermission/session.json`. For recovery

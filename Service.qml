@@ -626,6 +626,7 @@ Item {
     if (command === "status") return root.ipcResponse(command, true, null)
     if (command === "exportHistory") return root.ipcHistoryExport(command)
     if (command === "start") succeeded = root.start()
+    else if (command === "stopCadence") succeeded = root.stop()
     else if (command === "pause") succeeded = root.pause()
     else if (command === "resume") succeeded = root.resume()
     else if (command === "snooze") succeeded = root.snooze(payload.seconds)
@@ -743,6 +744,7 @@ Item {
 
     function status(payloadJson: string): string { return root.runIpc("status", payloadJson) }
     function start(payloadJson: string): string { return root.runIpc("start", payloadJson) }
+    function stopCadence(payloadJson: string): string { return root.runIpc("stopCadence", payloadJson) }
     function pause(payloadJson: string): string { return root.runIpc("pause", payloadJson) }
     function resume(payloadJson: string): string { return root.runIpc("resume", payloadJson) }
     function snooze(payloadJson: string): string { return root.runIpc("snooze", payloadJson) }

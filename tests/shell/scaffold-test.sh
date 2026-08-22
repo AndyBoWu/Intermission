@@ -96,6 +96,8 @@ grep -Eq 'History\.appendEffects' "$PROJECT_ROOT/Service.qml" \
   || fail "service must record bounded history through the pure history model"
 grep -Eq 'function exportHistory\(payloadJson: string\)' "$PROJECT_ROOT/Service.qml" \
   || fail "service IPC must expose a machine-readable history export"
+grep -Eq 'function stopCadence\(payloadJson: string\)' "$PROJECT_ROOT/Service.qml" \
+  || fail "service IPC must expose deterministic cadence reset"
 
 [[ -f $PROJECT_ROOT/Panel.qml ]] || fail "bar control panel is missing"
 grep -Eq 'Qt\.resolvedUrl\("Panel\.qml"\)' "$PROJECT_ROOT/BarWidget.qml" \

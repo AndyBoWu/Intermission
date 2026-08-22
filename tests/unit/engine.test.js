@@ -165,6 +165,33 @@ test("manual break and completion use the same cadence transition", () => {
   assertEqual(completed.effects[0].workTargetMs, 100 * SECOND);
 });
 
+test("stop and restart normalize an idle cycle for an explicit break", () => {
+  const options = settings();
+  const idle = Engine.transition(
+    started(0, options),
+    { type: "enterIdle" },
+    10 * SECOND,
+    options
+  ).state;
+
+  const stopped = Engine.transition(idle, { type: "stop" }, 11 * SECOND, options);
+  assert(stopped.ok);
+  assertEqual(stopped.state.phase, "stopped");
+
+  const restarted = Engine.transition(stopped.state, { type: "start" }, 12 * SECOND, options);
+  assert(restarted.ok);
+  assertEqual(restarted.state.phase, "active");
+
+  const activeBreak = Engine.transition(
+    restarted.state,
+    { type: "startBreak", kind: "short" },
+    13 * SECOND,
+    options
+  );
+  assert(activeBreak.ok);
+  assertEqual(activeBreak.state.phase, "break");
+});
+
 test("emergency exit completes the break with an explicit safety effect", () => {
   const options = settings();
   const activeBreak = Engine.transition(started(0, options), { type: "startBreak" }, 10 * SECOND, options).state;

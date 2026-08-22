@@ -344,6 +344,7 @@ Error codes are stable enums: `INVALID_ARGUMENT`, `INVALID_STATE`,
 | --- | --- | --- |
 | `status` | `{}` | Return the public state without mutation |
 | `start` | `{}` | Start a fresh interval or no-op successfully when already active |
+| `stopCadence` | `{}` | Stop the current cadence and reset it to a fresh stopped state |
 | `pause` | `{}` | Freeze the current resumable phase; repeated pause is a successful no-op |
 | `resume` | `{}` | Restore `resumePhase`; fail outside `paused` |
 | `snooze` | `{"seconds": 300}` | Defer a warning; default to the configured duration |
