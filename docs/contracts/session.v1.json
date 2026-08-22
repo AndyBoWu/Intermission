@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "revision": 3,
+  "savedAtEpochMs": 1787356800000,
+  "phase": "active",
+  "phaseEnteredAtEpochMs": 1787356500000,
+  "activeElapsedMs": 300000,
+  "activeStartedAtEpochMs": 1787356500000,
+  "workTargetMs": 1200000,
+  "breakKind": "short",
+  "cycleIndex": 0,
+  "warningStartedAtEpochMs": null,
+  "deferredUntilEpochMs": null,
+  "breakStartedAtEpochMs": null,
+  "breakDurationMs": 20000,
+  "resumePhase": null
+}

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "events": [
+    {
+      "id": "event-0001",
+      "atEpochMs": 1787356800000,
+      "type": "completed",
+      "breakKind": "short",
+      "scheduledDurationMs": 20000,
+      "actualDurationMs": 20000,
+      "source": "overlay",
+      "reason": null
+    }
+  ]
+}
