@@ -1,0 +1,515 @@
+var PHASES = ["stopped", "active", "idle", "warning", "deferred", "break", "paused"]
+var BREAK_KINDS = ["short", "long"]
+
+var DEFAULT_SETTINGS = {
+  workIntervalSeconds: 1200,
+  shortBreakSeconds: 20,
+  longBreakSeconds: 180,
+  cyclesBeforeLong: 4,
+  warningSeconds: 30,
+  snoozeSeconds: 300,
+  naturalBreakSeconds: 120
+}
+
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+function isFiniteNumber(value) {
+  return typeof value === "number" && isFinite(value)
+}
+
+function integerSetting(value, fallback, minimum, maximum) {
+  if (!Number.isInteger(value) || value < minimum || value > maximum) return fallback
+  return value
+}
+
+function normalizeSettings(raw) {
+  var value = isObject(raw) ? raw : {}
+  return {
+    workIntervalSeconds: integerSetting(value.workIntervalSeconds, DEFAULT_SETTINGS.workIntervalSeconds, 60, 14400),
+    shortBreakSeconds: integerSetting(value.shortBreakSeconds, DEFAULT_SETTINGS.shortBreakSeconds, 10, 900),
+    longBreakSeconds: integerSetting(value.longBreakSeconds, DEFAULT_SETTINGS.longBreakSeconds, 30, 3600),
+    cyclesBeforeLong: integerSetting(value.cyclesBeforeLong, DEFAULT_SETTINGS.cyclesBeforeLong, 1, 12),
+    warningSeconds: integerSetting(value.warningSeconds, DEFAULT_SETTINGS.warningSeconds, 0, 300),
+    snoozeSeconds: integerSetting(value.snoozeSeconds, DEFAULT_SETTINGS.snoozeSeconds, 60, 1800),
+    naturalBreakSeconds: integerSetting(value.naturalBreakSeconds, DEFAULT_SETTINGS.naturalBreakSeconds, 30, 3600)
+  }
+}
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value))
+}
+
+function breakKindForCycle(cycleIndex, settings) {
+  return cycleIndex >= settings.cyclesBeforeLong - 1 ? "long" : "short"
+}
+
+function breakDurationMs(kind, settings) {
+  return (kind === "long" ? settings.longBreakSeconds : settings.shortBreakSeconds) * 1000
+}
+
+function createState(now, rawSettings) {
+  var settings = normalizeSettings(rawSettings)
+  var timestamp = isFiniteNumber(now) && now >= 0 ? Math.floor(now) : 0
+  return {
+    schemaVersion: 1,
+    revision: 0,
+    savedAtEpochMs: timestamp,
+    phase: "stopped",
+    phaseEnteredAtEpochMs: timestamp,
+    activeElapsedMs: 0,
+    activeStartedAtEpochMs: null,
+    workTargetMs: settings.workIntervalSeconds * 1000,
+    breakKind: null,
+    cycleIndex: 0,
+    warningStartedAtEpochMs: null,
+    deferredUntilEpochMs: null,
+    breakStartedAtEpochMs: null,
+    breakDurationMs: 0,
+    resumePhase: null
+  }
+}
+
+function success(state, changed, effects) {
+  return {
+    ok: true,
+    changed: changed === true,
+    state: state,
+    effects: effects || [],
+    error: null
+  }
+}
+
+function failure(state, code, message) {
+  return {
+    ok: false,
+    changed: false,
+    state: clone(state),
+    effects: [],
+    error: { code: code, message: message }
+  }
+}
+
+function changedState(state, now, phase, patch) {
+  var next = clone(state)
+  var previousPhase = next.phase
+  var values = patch || {}
+
+  for (var key in values) next[key] = values[key]
+  next.phase = phase
+  next.revision = state.revision + 1
+  next.savedAtEpochMs = now
+  if (phase !== previousPhase) next.phaseEnteredAtEpochMs = now
+  return next
+}
+
+function activeElapsedMs(state, now) {
+  var elapsed = Math.max(0, Number(state.activeElapsedMs) || 0)
+  if (state.phase === "active" && isFiniteNumber(state.activeStartedAtEpochMs))
+    elapsed += Math.max(0, now - state.activeStartedAtEpochMs)
+  return elapsed
+}
+
+function publicState(state, now, rawSettings) {
+  var settings = normalizeSettings(rawSettings)
+  var timestamp = isFiniteNumber(now) ? now : state.savedAtEpochMs
+  var remaining = 0
+
+  if (state.phase === "active") {
+    remaining = Math.max(0, state.workTargetMs - activeElapsedMs(state, timestamp))
+  } else if (state.phase === "warning") {
+    var warningStarted = isFiniteNumber(state.warningStartedAtEpochMs)
+      ? state.warningStartedAtEpochMs : timestamp
+    remaining = Math.max(0, settings.warningSeconds * 1000 - (timestamp - warningStarted))
+  } else if (state.phase === "deferred") {
+    remaining = Math.max(0, (state.deferredUntilEpochMs || timestamp) - timestamp)
+  } else if (state.phase === "break") {
+    remaining = Math.max(0, state.breakStartedAtEpochMs + state.breakDurationMs - timestamp)
+  } else if (state.phase === "paused") {
+    if (state.resumePhase === "active" || state.resumePhase === "idle")
+      remaining = Math.max(0, state.workTargetMs - state.activeElapsedMs)
+    else if (state.resumePhase === "warning")
+      remaining = Math.max(0, settings.warningSeconds * 1000 - (state.phaseEnteredAtEpochMs - state.warningStartedAtEpochMs))
+    else if (state.resumePhase === "deferred")
+      remaining = Math.max(0, state.deferredUntilEpochMs - state.phaseEnteredAtEpochMs)
+  }
+
+  return {
+    phase: state.phase,
+    breakKind: state.breakKind,
+    cycleIndex: state.cycleIndex,
+    remainingSeconds: Math.ceil(remaining / 1000),
+    paused: state.phase === "paused"
+  }
+}
+
+function freshActive(state, now, settings, cycleIndex, effects) {
+  var kind = breakKindForCycle(cycleIndex, settings)
+  var next = changedState(state, now, "active", {
+    activeElapsedMs: 0,
+    activeStartedAtEpochMs: now,
+    workTargetMs: settings.workIntervalSeconds * 1000,
+    breakKind: kind,
+    cycleIndex: cycleIndex,
+    warningStartedAtEpochMs: null,
+    deferredUntilEpochMs: null,
+    breakStartedAtEpochMs: null,
+    breakDurationMs: breakDurationMs(kind, settings),
+    resumePhase: null
+  })
+  return success(next, true, effects)
+}
+
+function nextCycle(state, settings) {
+  if (state.breakKind === "long") return 0
+  return state.cycleIndex + 1
+}
+
+function finishBreakCycle(state, now, settings, type, details) {
+  var effect = {
+    type: type,
+    atEpochMs: now,
+    breakKind: state.breakKind,
+    scheduledDurationMs: state.breakDurationMs
+  }
+  var values = details || {}
+  for (var key in values) effect[key] = values[key]
+  return freshActive(state, now, settings, nextCycle(state, settings), [effect])
+}
+
+function beginBreak(state, now, settings, requestedKind) {
+  var kind = requestedKind || state.breakKind
+  if (BREAK_KINDS.indexOf(kind) === -1)
+    return failure(state, "INVALID_ARGUMENT", "Break kind must be short or long")
+
+  if (["active", "warning", "deferred"].indexOf(state.phase) === -1)
+    return failure(state, "INVALID_STATE", "A break cannot start from " + state.phase)
+
+  var elapsed = state.phase === "active" ? activeElapsedMs(state, now) : state.activeElapsedMs
+  var duration = breakDurationMs(kind, settings)
+  var next = changedState(state, now, "break", {
+    activeElapsedMs: Math.min(elapsed, state.workTargetMs),
+    activeStartedAtEpochMs: null,
+    breakKind: kind,
+    warningStartedAtEpochMs: null,
+    deferredUntilEpochMs: null,
+    breakStartedAtEpochMs: now,
+    breakDurationMs: duration,
+    resumePhase: null
+  })
+  return success(next, true, [{
+    type: "break-started",
+    atEpochMs: now,
+    breakKind: kind,
+    scheduledDurationMs: duration
+  }])
+}
+
+function validateEventTime(state, now) {
+  if (!Number.isInteger(now) || now < 0) return "Event time must be a non-negative integer"
+  if (now < state.savedAtEpochMs) return "Event time is older than the current state"
+  return ""
+}
+
+function transition(inputState, event, now, rawSettings) {
+  var settings = normalizeSettings(rawSettings)
+  var state = clone(inputState)
+  var type = isObject(event) ? String(event.type || "") : ""
+  var timeError = validateEventTime(state, now)
+  if (timeError) return failure(state, "STALE_EVENT", timeError)
+
+  if (type === "start") {
+    if (state.phase === "active" || state.phase === "idle") return success(state, false)
+    if (state.phase !== "stopped") return failure(state, "INVALID_STATE", "Start requires a stopped state")
+    return freshActive(state, now, settings, 0)
+  }
+
+  if (type === "stop") {
+    if (state.phase === "stopped") return success(state, false)
+    var stopped = createState(now, settings)
+    stopped.revision = state.revision + 1
+    return success(stopped, true)
+  }
+
+  if (type === "pause") {
+    if (state.phase === "paused") return success(state, false)
+    if (["active", "idle", "warning", "deferred"].indexOf(state.phase) === -1)
+      return failure(state, "INVALID_STATE", "Pause is unavailable during " + state.phase)
+    var pauseElapsed = state.phase === "active" ? activeElapsedMs(state, now) : state.activeElapsedMs
+    var paused = changedState(state, now, "paused", {
+      activeElapsedMs: pauseElapsed,
+      activeStartedAtEpochMs: null,
+      resumePhase: state.phase
+    })
+    return success(paused, true)
+  }
+
+  if (type === "resume") {
+    if (state.phase !== "paused") return failure(state, "INVALID_STATE", "Resume requires a paused state")
+    var resumePhase = state.resumePhase || "active"
+    var pausedFor = Math.max(0, now - state.phaseEnteredAtEpochMs)
+    var resumePatch = { resumePhase: null }
+
+    if (resumePhase === "active") {
+      resumePatch.activeStartedAtEpochMs = now
+    } else if (resumePhase === "idle") {
+      resumePatch.activeStartedAtEpochMs = null
+    } else if (resumePhase === "warning") {
+      resumePatch.warningStartedAtEpochMs = (state.warningStartedAtEpochMs || state.phaseEnteredAtEpochMs) + pausedFor
+    } else if (resumePhase === "deferred") {
+      resumePatch.deferredUntilEpochMs = state.deferredUntilEpochMs + pausedFor
+    } else {
+      return failure(state, "INVALID_STATE", "Paused state has no resumable phase")
+    }
+
+    return success(changedState(state, now, resumePhase, resumePatch), true)
+  }
+
+  if (type === "enterIdle") {
+    if (state.phase === "idle") return success(state, false)
+    if (state.phase !== "active") return failure(state, "INVALID_STATE", "Idle entry requires active work")
+    return success(changedState(state, now, "idle", {
+      activeElapsedMs: activeElapsedMs(state, now),
+      activeStartedAtEpochMs: null
+    }), true)
+  }
+
+  if (type === "returnActive") {
+    if (state.phase === "active") return success(state, false)
+    if (state.phase !== "idle") return failure(state, "INVALID_STATE", "Activity return requires idle state")
+    return success(changedState(state, now, "active", { activeStartedAtEpochMs: now }), true)
+  }
+
+  if (type === "snooze") {
+    if (state.phase !== "warning") return failure(state, "INVALID_STATE", "Snooze requires a warning")
+    var seconds = event.seconds === undefined ? settings.snoozeSeconds : event.seconds
+    if (!Number.isInteger(seconds) || seconds < 60 || seconds > 1800)
+      return failure(state, "INVALID_ARGUMENT", "Snooze seconds must be an integer from 60 to 1800")
+    return success(changedState(state, now, "deferred", {
+      warningStartedAtEpochMs: null,
+      deferredUntilEpochMs: now + seconds * 1000
+    }), true, [{ type: "break-deferred", atEpochMs: now, breakKind: state.breakKind, seconds: seconds }])
+  }
+
+  if (type === "skip") {
+    if (state.phase !== "warning" && state.phase !== "deferred")
+      return failure(state, "INVALID_STATE", "Skip requires a warning or deferred break")
+    return finishBreakCycle(state, now, settings, "break-skipped", {
+      source: "user",
+      reason: event.reason || "user"
+    })
+  }
+
+  if (type === "startBreak") {
+    if (state.phase === "break") return success(state, false)
+    return beginBreak(state, now, settings, event.kind)
+  }
+
+  if (type === "completeBreak") {
+    if (state.phase !== "break") return failure(state, "INVALID_STATE", "No break is active")
+    return finishBreakCycle(state, now, settings, "break-completed", {
+      source: event.source || "timer",
+      actualDurationMs: Math.max(0, now - state.breakStartedAtEpochMs)
+    })
+  }
+
+  if (type === "tick") {
+    if (state.phase === "active") {
+      var elapsed = activeElapsedMs(state, now)
+      if (elapsed >= state.workTargetMs) return beginBreak(state, now, settings)
+
+      var warningMs = Math.min(settings.warningSeconds * 1000, state.workTargetMs)
+      var warningAt = state.workTargetMs - warningMs
+      if (warningMs > 0 && elapsed >= warningAt) {
+        var warningStartedAt = now - (elapsed - warningAt)
+        return success(changedState(state, now, "warning", {
+          activeElapsedMs: elapsed,
+          activeStartedAtEpochMs: null,
+          warningStartedAtEpochMs: warningStartedAt
+        }), true)
+      }
+      return success(state, false)
+    }
+
+    if (state.phase === "warning") {
+      if (now - state.warningStartedAtEpochMs >= settings.warningSeconds * 1000)
+        return beginBreak(state, now, settings)
+      return success(state, false)
+    }
+
+    if (state.phase === "deferred") {
+      if (now >= state.deferredUntilEpochMs) {
+        return success(changedState(state, now, "warning", {
+          deferredUntilEpochMs: null,
+          warningStartedAtEpochMs: now
+        }), true)
+      }
+      return success(state, false)
+    }
+
+    if (state.phase === "break") {
+      if (now >= state.breakStartedAtEpochMs + state.breakDurationMs)
+        return finishBreakCycle(state, now, settings, "break-completed", {
+          source: "timer",
+          actualDurationMs: state.breakDurationMs
+        })
+      return success(state, false)
+    }
+
+    return success(state, false)
+  }
+
+  return failure(state, "INVALID_ARGUMENT", "Unknown event type: " + type)
+}
+
+function validSnapshot(snapshot) {
+  if (!isObject(snapshot) || snapshot.schemaVersion !== 1) return false
+  if (PHASES.indexOf(snapshot.phase) === -1) return false
+  if (!Number.isInteger(snapshot.revision) || snapshot.revision < 0) return false
+  if (!Number.isInteger(snapshot.savedAtEpochMs) || snapshot.savedAtEpochMs < 0) return false
+  if (!Number.isInteger(snapshot.phaseEnteredAtEpochMs) || snapshot.phaseEnteredAtEpochMs < 0 ||
+      snapshot.phaseEnteredAtEpochMs > snapshot.savedAtEpochMs) return false
+  if (!Number.isInteger(snapshot.activeElapsedMs) || snapshot.activeElapsedMs < 0) return false
+  if (!Number.isInteger(snapshot.workTargetMs) || snapshot.workTargetMs <= 0) return false
+  if (snapshot.breakKind !== null && BREAK_KINDS.indexOf(snapshot.breakKind) === -1) return false
+  if (!Number.isInteger(snapshot.cycleIndex) || snapshot.cycleIndex < 0) return false
+  if (!Number.isInteger(snapshot.breakDurationMs) || snapshot.breakDurationMs < 0) return false
+  if (snapshot.activeStartedAtEpochMs !== null &&
+      (!Number.isInteger(snapshot.activeStartedAtEpochMs) || snapshot.activeStartedAtEpochMs < 0 ||
+       snapshot.activeStartedAtEpochMs > snapshot.savedAtEpochMs)) return false
+  if (snapshot.warningStartedAtEpochMs !== null &&
+      (!Number.isInteger(snapshot.warningStartedAtEpochMs) || snapshot.warningStartedAtEpochMs < 0 ||
+       snapshot.warningStartedAtEpochMs > snapshot.savedAtEpochMs)) return false
+  if (snapshot.deferredUntilEpochMs !== null &&
+      (!Number.isInteger(snapshot.deferredUntilEpochMs) || snapshot.deferredUntilEpochMs < 0)) return false
+  if (snapshot.breakStartedAtEpochMs !== null &&
+      (!Number.isInteger(snapshot.breakStartedAtEpochMs) || snapshot.breakStartedAtEpochMs < 0 ||
+       snapshot.breakStartedAtEpochMs > snapshot.savedAtEpochMs)) return false
+  if (snapshot.resumePhase !== null && typeof snapshot.resumePhase !== "string") return false
+
+  if (snapshot.phase === "stopped") {
+    return snapshot.breakKind === null && snapshot.activeElapsedMs === 0 && snapshot.cycleIndex === 0 &&
+      snapshot.activeStartedAtEpochMs === null &&
+      snapshot.warningStartedAtEpochMs === null && snapshot.deferredUntilEpochMs === null &&
+      snapshot.breakStartedAtEpochMs === null && snapshot.breakDurationMs === 0 &&
+      snapshot.resumePhase === null
+  }
+
+  if (BREAK_KINDS.indexOf(snapshot.breakKind) === -1 || snapshot.breakDurationMs <= 0) return false
+  if (snapshot.phase === "active")
+    return Number.isInteger(snapshot.activeStartedAtEpochMs) &&
+      snapshot.warningStartedAtEpochMs === null && snapshot.deferredUntilEpochMs === null &&
+      snapshot.breakStartedAtEpochMs === null && snapshot.resumePhase === null
+  if (snapshot.phase === "idle")
+    return snapshot.activeStartedAtEpochMs === null && snapshot.warningStartedAtEpochMs === null &&
+      snapshot.deferredUntilEpochMs === null && snapshot.breakStartedAtEpochMs === null &&
+      snapshot.resumePhase === null
+  if (snapshot.phase === "warning")
+    return snapshot.activeStartedAtEpochMs === null &&
+      Number.isInteger(snapshot.warningStartedAtEpochMs) && snapshot.deferredUntilEpochMs === null &&
+      snapshot.breakStartedAtEpochMs === null && snapshot.resumePhase === null
+  if (snapshot.phase === "deferred")
+    return snapshot.activeStartedAtEpochMs === null && snapshot.warningStartedAtEpochMs === null &&
+      Number.isInteger(snapshot.deferredUntilEpochMs) && snapshot.breakStartedAtEpochMs === null &&
+      snapshot.resumePhase === null
+  if (snapshot.phase === "break")
+    return snapshot.activeStartedAtEpochMs === null && snapshot.warningStartedAtEpochMs === null &&
+      snapshot.deferredUntilEpochMs === null && Number.isInteger(snapshot.breakStartedAtEpochMs) &&
+      snapshot.resumePhase === null
+  if (snapshot.phase === "paused")
+    return snapshot.activeStartedAtEpochMs === null && snapshot.breakStartedAtEpochMs === null &&
+      ["active", "idle", "warning", "deferred"].indexOf(snapshot.resumePhase) !== -1 &&
+      (snapshot.resumePhase === "warning" ? Number.isInteger(snapshot.warningStartedAtEpochMs) :
+        snapshot.warningStartedAtEpochMs === null) &&
+      (snapshot.resumePhase === "deferred" ? Number.isInteger(snapshot.deferredUntilEpochMs) :
+        snapshot.deferredUntilEpochMs === null)
+  return false
+}
+
+function recoveryFailure(now, settings, code, message) {
+  return {
+    ok: false,
+    changed: true,
+    state: createState(now, settings),
+    effects: [],
+    error: { code: code, message: message }
+  }
+}
+
+function restoreState(snapshot, now, rawSettings) {
+  var settings = normalizeSettings(rawSettings)
+  if (!Number.isInteger(now) || now < 0)
+    return recoveryFailure(0, settings, "INVALID_SNAPSHOT", "Restore time is invalid")
+  if (!validSnapshot(snapshot))
+    return recoveryFailure(now, settings, "INVALID_SNAPSHOT", "Snapshot shape is invalid")
+  if (snapshot.savedAtEpochMs > now + 300000)
+    return recoveryFailure(now, settings, "FUTURE_SNAPSHOT", "Snapshot is from the future")
+  if (now - snapshot.savedAtEpochMs > 43200000)
+    return recoveryFailure(now, settings, "STALE_SNAPSHOT", "Snapshot is older than 12 hours")
+
+  var state = clone(snapshot)
+  var downtime = Math.max(0, now - state.savedAtEpochMs)
+
+  if (state.phase === "paused" || state.phase === "stopped") return success(state, false)
+
+  if (state.phase === "break") {
+    if (!isFiniteNumber(state.breakStartedAtEpochMs))
+      return recoveryFailure(now, settings, "INVALID_SNAPSHOT", "Break start is invalid")
+    if (now >= state.breakStartedAtEpochMs + state.breakDurationMs)
+      return finishBreakCycle(state, now, settings, "break-completed", {
+        source: "recovery",
+        actualDurationMs: state.breakDurationMs
+      })
+    return success(state, false, [{ type: "restore-overlay", atEpochMs: now, breakKind: state.breakKind }])
+  }
+
+  if (state.phase === "warning") {
+    var warningStart = state.warningStartedAtEpochMs
+    if (!isFiniteNumber(warningStart) || now - warningStart >= settings.warningSeconds * 1000) {
+      return success(changedState(state, now, "warning", { warningStartedAtEpochMs: now }), true)
+    }
+    return success(state, false)
+  }
+
+  if (state.phase === "deferred") {
+    if (!isFiniteNumber(state.deferredUntilEpochMs) || now >= state.deferredUntilEpochMs) {
+      return success(changedState(state, now, "warning", {
+        deferredUntilEpochMs: null,
+        warningStartedAtEpochMs: now
+      }), true)
+    }
+    return success(state, false)
+  }
+
+  if (state.phase === "active" || state.phase === "idle") {
+    if (downtime >= settings.naturalBreakSeconds * 1000)
+      return finishBreakCycle(state, now, settings, "break-natural", {
+        source: "recovery",
+        actualDurationMs: downtime
+      })
+
+    var restoredPhase = state.phase
+    var elapsed = state.activeElapsedMs
+    if (restoredPhase === "active" && isFiniteNumber(state.activeStartedAtEpochMs))
+      elapsed += Math.max(0, state.savedAtEpochMs - state.activeStartedAtEpochMs)
+    return success(changedState(state, now, restoredPhase, {
+      activeElapsedMs: elapsed,
+      activeStartedAtEpochMs: restoredPhase === "active" ? now : null
+    }), true)
+  }
+
+  return recoveryFailure(now, settings, "INVALID_SNAPSHOT", "Snapshot phase cannot be restored")
+}
+
+if (typeof module !== "undefined") {
+  module.exports = {
+    PHASES: PHASES,
+    DEFAULT_SETTINGS: DEFAULT_SETTINGS,
+    normalizeSettings: normalizeSettings,
+    createState: createState,
+    publicState: publicState,
+    transition: transition,
+    restoreState: restoreState
+  }
+}

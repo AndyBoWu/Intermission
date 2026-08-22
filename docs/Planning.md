@@ -362,7 +362,7 @@ the planned lifecycle, and has repeatable unit/shell/live test entry points.
 Goal: deliver a usable idle-aware rhythm through the bar without relying on
 the full-screen experience.
 
-- [ ] [#4 — Implement the active-use rhythm engine](https://github.com/AndyBoWu/Intermission/issues/4)
+- [x] [#4 — Implement the active-use rhythm engine](https://github.com/AndyBoWu/Intermission/issues/4)
 - [ ] [#5 — Integrate idle-aware natural break detection](https://github.com/AndyBoWu/Intermission/issues/5)
 - [ ] [#6 — Build the bar chip and control panel](https://github.com/AndyBoWu/Intermission/issues/6)
 

@@ -56,6 +56,7 @@ runtime_files=(
   "$PROJECT_ROOT/BarWidget.qml"
   "$PROJECT_ROOT/Overlay.qml"
 )
+[[ ! -f $PROJECT_ROOT/Engine.js ]] || runtime_files+=("$PROJECT_ROOT/Engine.js")
 
 if grep -Eni '(^|[^[:alnum:]_])(sudo|systemctl|curl|wget)([^[:alnum:]_]|$)|https?://|execDetached|Process[[:space:]]*\{' "${runtime_files[@]}"; then
   fail "runtime scaffold contains a prohibited dependency"
