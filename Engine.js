@@ -351,6 +351,15 @@ function transition(inputState, event, now, rawSettings) {
     })
   }
 
+  if (type === "emergencyExit") {
+    if (state.phase !== "break") return failure(state, "INVALID_STATE", "No break is active")
+    return finishBreakCycle(state, now, settings, "break-emergency-exit", {
+      source: "overlay",
+      reason: "escape-hold",
+      actualDurationMs: Math.max(0, now - state.breakStartedAtEpochMs)
+    })
+  }
+
   if (type === "naturalBreak") {
     var naturalFromIdle = state.phase === "idle"
     var naturalFromIdlePause = state.phase === "paused" &&
@@ -418,6 +427,21 @@ function transition(inputState, event, now, rawSettings) {
   }
 
   return failure(state, "INVALID_ARGUMENT", "Unknown event type: " + type)
+}
+
+function snapshotState(inputState, now) {
+  if (!isObject(inputState)) return null
+  var state = clone(inputState)
+  var savedAt = Number.isInteger(state.savedAtEpochMs) && state.savedAtEpochMs >= 0
+    ? state.savedAtEpochMs : 0
+  var timestamp = Number.isInteger(now) && now >= savedAt ? now : savedAt
+
+  if (state.phase === "active" && Number.isInteger(state.activeStartedAtEpochMs)) {
+    state.activeElapsedMs = activeElapsedMs(state, timestamp)
+    state.activeStartedAtEpochMs = timestamp
+  }
+  state.savedAtEpochMs = timestamp
+  return state
 }
 
 function validSnapshot(snapshot) {
@@ -771,6 +795,7 @@ if (typeof module !== "undefined") {
     createActivityContext: createActivityContext,
     publicState: publicState,
     transition: transition,
+    snapshotState: snapshotState,
     restoreState: restoreState,
     activitySignal: activitySignal,
     heartbeat: heartbeat

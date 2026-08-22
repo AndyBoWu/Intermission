@@ -20,6 +20,12 @@ Item {
   property bool opened: false
   property bool focusReady: false
   property string focusScreenName: ""
+  property bool escapeHolding: false
+  property double escapeHoldStartedAtEpochMs: 0
+  property real escapeHoldProgress: 0
+  readonly property int escapeHoldSeconds: service && service.configuration
+    ? Number(service.configuration.escapeHoldSeconds) || 3 : 3
+  readonly property int escapeHoldMs: escapeHoldSeconds * 1000
   readonly property var state: service && service.ready
     ? service.publicState
     : ({ phase: "stopped", breakKind: "short", cycleIndex: 0, remainingSeconds: 0, paused: false })
@@ -33,7 +39,10 @@ Item {
     totalSeconds
   )
 
+  onFocusScreenNameChanged: cancelEscapeHold()
+
   function open(payloadJson) {
+    root.cancelEscapeHold()
     root.reconcileFocusScreen(true)
     root.focusReady = false
     root.opened = true
@@ -42,6 +51,7 @@ Item {
   }
 
   function close() {
+    root.cancelEscapeHold()
     focusPrimeTimer.stop()
     root.focusReady = false
     root.opened = false
@@ -61,6 +71,34 @@ Item {
     if (root.service && root.state.phase === "break")
       root.service.completeBreak("overlay")
     root.requestClose()
+  }
+
+  function beginEscapeHold() {
+    if (!root.opened || root.escapeHolding) return
+    root.escapeHolding = true
+    root.escapeHoldProgress = 0
+    root.escapeHoldStartedAtEpochMs = Date.now()
+    escapeHoldTimer.start()
+  }
+
+  function cancelEscapeHold() {
+    escapeHoldTimer.stop()
+    root.escapeHolding = false
+    root.escapeHoldProgress = 0
+    root.escapeHoldStartedAtEpochMs = 0
+  }
+
+  function finishEmergencyExit() {
+    escapeHoldTimer.stop()
+    root.escapeHolding = false
+    root.escapeHoldProgress = 1
+    var outcome = root.service && typeof root.service.emergencyExit === "function"
+      ? root.service.emergencyExit() : null
+    if (!outcome || outcome.stateCompleted !== true) {
+      root.escapeHoldProgress = 0
+      return
+    }
+    if (outcome.overlayHidden !== true) root.requestClose()
   }
 
   function reconcileFocusScreen(preferFocused) {
@@ -89,9 +127,21 @@ Item {
     onTriggered: if (root.opened) root.focusReady = true
   }
 
+  Timer {
+    id: escapeHoldTimer
+    interval: 50
+    repeat: true
+    onTriggered: {
+      var elapsed = Math.max(0, Date.now() - root.escapeHoldStartedAtEpochMs)
+      root.escapeHoldProgress = Math.min(1, elapsed / root.escapeHoldMs)
+      if (root.escapeHoldProgress >= 1) root.finishEmergencyExit()
+    }
+  }
+
   Connections {
     target: Quickshell
     function onScreensChanged() {
+      root.cancelEscapeHold()
       root.reconcileFocusScreen(false)
       if (root.opened) focusPrimeTimer.restart()
     }
@@ -133,7 +183,10 @@ Item {
           })
         }
 
-        onVisibleChanged: primeKeyboardFocus()
+        onVisibleChanged: {
+          if (!visible) root.cancelEscapeHold()
+          primeKeyboardFocus()
+        }
 
         Connections {
           target: root
@@ -150,7 +203,17 @@ Item {
           id: focusScope
           anchors.fill: parent
           focus: true
-          Keys.onEscapePressed: root.requestClose()
+          Keys.priority: Keys.BeforeItem
+          Keys.onPressed: function(event) {
+            if (event.key !== Qt.Key_Escape) return
+            event.accepted = true
+            if (!event.isAutoRepeat) root.beginEscapeHold()
+          }
+          Keys.onReleased: function(event) {
+            if (event.key !== Qt.Key_Escape) return
+            event.accepted = true
+            if (!event.isAutoRepeat && root.escapeHolding) root.cancelEscapeHold()
+          }
 
           Rectangle {
             anchors.fill: parent
@@ -293,7 +356,9 @@ Item {
 
               Text {
                 width: parent.width
-                text: "Enter to finish · Esc to close"
+                text: root.escapeHolding
+                  ? "Keep holding Escape · " + Math.round(root.escapeHoldProgress * 100) + "%"
+                  : "Enter to finish · Hold Esc for " + root.escapeHoldSeconds + " seconds to exit"
                 color: Color.foreground
                 opacity: 0.72
                 font.family: Style.font.family

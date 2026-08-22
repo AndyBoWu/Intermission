@@ -59,6 +59,7 @@ runtime_files=(
 [[ ! -f $PROJECT_ROOT/Engine.js ]] || runtime_files+=("$PROJECT_ROOT/Engine.js")
 [[ ! -f $PROJECT_ROOT/Settings.js ]] || runtime_files+=("$PROJECT_ROOT/Settings.js")
 [[ ! -f $PROJECT_ROOT/BreakViewModel.js ]] || runtime_files+=("$PROJECT_ROOT/BreakViewModel.js")
+[[ ! -f $PROJECT_ROOT/StateStore.js ]] || runtime_files+=("$PROJECT_ROOT/StateStore.js")
 [[ ! -f $PROJECT_ROOT/Panel.qml ]] || runtime_files+=("$PROJECT_ROOT/Panel.qml")
 
 if grep -Eni '(^|[^[:alnum:]_])(sudo|systemctl|curl|wget)([^[:alnum:]_]|$)|https?://|execDetached|Process[[:space:]]*\{' "${runtime_files[@]}"; then
@@ -96,11 +97,27 @@ grep -Eq 'PanelWindow[[:space:]]*\{' "$PROJECT_ROOT/Overlay.qml" \
   || fail "overlay must use a layer-shell window per screen"
 grep -Eq 'WlrKeyboardFocus\.Exclusive' "$PROJECT_ROOT/Overlay.qml" \
   || fail "overlay must expose its keyboard controls"
-grep -Eq 'Keys\.onEscapePressed:[[:space:]]*root\.requestClose' "$PROJECT_ROOT/Overlay.qml" \
-  || fail "overlay must provide the safety keyboard path"
+grep -Eq 'Keys\.onPressed:[[:space:]]*function\(event\)' "$PROJECT_ROOT/Overlay.qml" \
+  || fail "overlay must capture the safety keyboard path"
+grep -Eq 'root\.beginEscapeHold\(\)' "$PROJECT_ROOT/Overlay.qml" \
+  || fail "overlay must require a deliberate Escape hold"
+grep -Eq 'outcome\.stateCompleted !== true' "$PROJECT_ROOT/Overlay.qml" \
+  || fail "overlay must remain visible when emergency state recovery fails"
 grep -Eq 'root\.service\.completeBreak\("overlay"\)' "$PROJECT_ROOT/Overlay.qml" \
   || fail "overlay completion must route through the service"
 grep -Eq 'root\.shell\.hide\(root\.moduleName\)' "$PROJECT_ROOT/Overlay.qml" \
   || fail "overlay close must clear shell loader state"
+grep -Eq 'root\.shell\.summon\(root\.moduleName,[[:space:]]*"\{\}"\)' "$PROJECT_ROOT/Service.qml" \
+  || fail "service must summon the break overlay"
+grep -Eq 'function openOverlay\(payloadJson: string\)' "$PROJECT_ROOT/Service.qml" \
+  || fail "service IPC must expose overlay open"
+grep -Eq 'function hideOverlay\(payloadJson: string\)' "$PROJECT_ROOT/Service.qml" \
+  || fail "service IPC must expose overlay hide"
+grep -Eq 'atomicWrites:[[:space:]]*true' "$PROJECT_ROOT/Service.qml" \
+  || fail "runtime snapshots must use atomic writes"
+grep -Eq 'blockWrites:[[:space:]]*true' "$PROJECT_ROOT/Service.qml" \
+  || fail "shutdown snapshot writes must finish before teardown"
+grep -Eq 'StateStore\.sessionPath' "$PROJECT_ROOT/Service.qml" \
+  || fail "runtime snapshots must use the versioned state-store path"
 
 echo "ok - scaffold contract"
