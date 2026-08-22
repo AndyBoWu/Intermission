@@ -113,10 +113,28 @@ BarWidget {
       (root.state.phase === "stopped" ? "" : " — " + root.formatRemaining(root.state.remainingSeconds, false))
     active: root.state.phase === "warning" || root.state.phase === "break" || root.opened
     enabled: root.intermissionService && root.intermissionService.ready
+    activeFocusOnTab: enabled
+    Accessible.role: Accessible.Button
+    Accessible.name: tooltipText
+    Accessible.description: "Open Intermission controls"
+    Accessible.onPressAction: if (enabled) root.toggle()
+
+    Keys.onReturnPressed: root.toggle()
+    Keys.onEnterPressed: root.toggle()
+    Keys.onSpacePressed: root.toggle()
 
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.LeftButton) root.toggle()
     }
+  }
+
+  Rectangle {
+    anchors.fill: button
+    color: "transparent"
+    radius: Style.cornerRadius
+    border.width: button.activeFocus ? Math.max(2, Style.normalBorderWidth) : 0
+    border.color: Color.accent
+    visible: button.activeFocus
   }
 
   Component.onCompleted: {
