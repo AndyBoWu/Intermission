@@ -252,6 +252,8 @@ recorded in [Release Evidence](docs/ReleaseEvidence.md).
 - [Runtime and IPC Contracts](docs/Contracts.md) — settings, state, recovery, and commands
 - [Acceptance Guide](docs/Acceptance.md) — local checks, live scenarios, and visual evidence
 - [Automation Security](docs/AutomationSecurity.md) — CI ownership, suppressions, and launch settings
+- [Repository Governance](docs/Governance.md) — protected-main policy, merge path, and bypass review
+- [Contributing](CONTRIBUTING.md) — local validation and the required pull-request workflow
 - [Marketplace Checklist](docs/MarketplaceChecklist.md) — owner-gated publication preparation
 
 ## License

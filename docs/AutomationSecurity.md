@@ -62,6 +62,10 @@ ruleset, and enable the setting that requires actions to be pinned to a
 full-length commit SHA. Require a CODEOWNERS review for automation changes when
 more than one maintainer can approve pull requests.
 
+The exact protected-main, Actions allowlist, token, merge, and bypass settings
+are defined and reviewed in [Repository Governance](Governance.md). Run
+`npm run governance:verify` with an authenticated GitHub CLI to detect drift.
+
 The repository is private on an account where CodeQL code scanning is not
 currently available. The committed CodeQL job therefore checks repository
 visibility and remains skipped while private. It automatically analyzes both
