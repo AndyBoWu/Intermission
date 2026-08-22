@@ -773,7 +773,7 @@ Panel {
                 horizontalPadding: Style.space(8)
                 verticalPadding: Style.space(6)
                 bordered: root.dirty
-                focusable: root.dirty
+                focusable: true
                 enabled: root.dirty
                 opacity: enabled ? 1.0 : 0.82
                 Accessible.role: Accessible.Button
