@@ -68,11 +68,11 @@ runtime_files=(
   "$PROJECT_ROOT/BarWidget.qml"
   "$PROJECT_ROOT/Panel.qml"
   "$PROJECT_ROOT/Overlay.qml"
-  "$PROJECT_ROOT/Engine.js"
-  "$PROJECT_ROOT/Settings.js"
-  "$PROJECT_ROOT/BreakViewModel.js"
-  "$PROJECT_ROOT/StateStore.js"
-  "$PROJECT_ROOT/History.js"
+  "$PROJECT_ROOT/lib/Engine.js"
+  "$PROJECT_ROOT/lib/Settings.js"
+  "$PROJECT_ROOT/lib/BreakViewModel.js"
+  "$PROJECT_ROOT/lib/StateStore.js"
+  "$PROJECT_ROOT/lib/History.js"
 )
 runtime_pattern='(^|[^[:alnum:]_])(sudo|pkexec|systemctl|curl|wget)([^[:alnum:]_]|$)|https?://|execDetached|Process[[:space:]]*\{'
 if rg -l -i "$runtime_pattern" "${runtime_files[@]}" >/dev/null; then

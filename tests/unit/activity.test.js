@@ -1,4 +1,4 @@
-const Engine = require("../../Engine.js");
+const Engine = require("../../lib/Engine.js");
 
 const SECOND = 1000;
 const BASE = 1_000_000;

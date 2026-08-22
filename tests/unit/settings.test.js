@@ -1,4 +1,4 @@
-const Settings = require("../../Settings.js");
+const Settings = require("../../lib/Settings.js");
 
 test("settings normalize every field independently", () => {
   const normalized = Settings.normalize({

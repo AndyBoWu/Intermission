@@ -244,9 +244,12 @@ Service.qml
 BarWidget.qml
 Panel.qml
 Overlay.qml
-Engine.js
-History.js
-StateStore.js
+lib/
+  BreakViewModel.js
+  Engine.js
+  History.js
+  Settings.js
+  StateStore.js
 tests/
   engine.test.js
   shell-test.sh
@@ -257,7 +260,7 @@ only be split when the running implementation needs the separation.
 
 ### Ownership of state
 
-- `Engine.js` owns deterministic transitions and cadence calculations.
+- `lib/Engine.js` owns deterministic transitions and cadence calculations.
 - `Service.qml` owns clocks, idle signals, IPC, persistence, and presentation
   coordination.
 - `BarWidget.qml` and `Panel.qml` render state and send commands.

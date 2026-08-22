@@ -3,10 +3,10 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
-import "Engine.js" as Engine
-import "History.js" as History
-import "Settings.js" as Settings
-import "StateStore.js" as StateStore
+import "lib/Engine.js" as Engine
+import "lib/History.js" as History
+import "lib/Settings.js" as Settings
+import "lib/StateStore.js" as StateStore
 
 Item {
   id: root

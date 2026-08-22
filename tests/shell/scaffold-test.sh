@@ -56,11 +56,11 @@ runtime_files=(
   "$PROJECT_ROOT/BarWidget.qml"
   "$PROJECT_ROOT/Overlay.qml"
 )
-[[ ! -f $PROJECT_ROOT/Engine.js ]] || runtime_files+=("$PROJECT_ROOT/Engine.js")
-[[ ! -f $PROJECT_ROOT/Settings.js ]] || runtime_files+=("$PROJECT_ROOT/Settings.js")
-[[ ! -f $PROJECT_ROOT/BreakViewModel.js ]] || runtime_files+=("$PROJECT_ROOT/BreakViewModel.js")
-[[ ! -f $PROJECT_ROOT/StateStore.js ]] || runtime_files+=("$PROJECT_ROOT/StateStore.js")
-[[ ! -f $PROJECT_ROOT/History.js ]] || runtime_files+=("$PROJECT_ROOT/History.js")
+[[ ! -f $PROJECT_ROOT/lib/Engine.js ]] || runtime_files+=("$PROJECT_ROOT/lib/Engine.js")
+[[ ! -f $PROJECT_ROOT/lib/Settings.js ]] || runtime_files+=("$PROJECT_ROOT/lib/Settings.js")
+[[ ! -f $PROJECT_ROOT/lib/BreakViewModel.js ]] || runtime_files+=("$PROJECT_ROOT/lib/BreakViewModel.js")
+[[ ! -f $PROJECT_ROOT/lib/StateStore.js ]] || runtime_files+=("$PROJECT_ROOT/lib/StateStore.js")
+[[ ! -f $PROJECT_ROOT/lib/History.js ]] || runtime_files+=("$PROJECT_ROOT/lib/History.js")
 [[ ! -f $PROJECT_ROOT/Panel.qml ]] || runtime_files+=("$PROJECT_ROOT/Panel.qml")
 
 if grep -Eni '(^|[^[:alnum:]_])(sudo|systemctl|curl|wget)([^[:alnum:]_]|$)|https?://|execDetached|Process[[:space:]]*\{' "${runtime_files[@]}"; then

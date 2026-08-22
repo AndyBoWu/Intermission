@@ -4,7 +4,7 @@ import Quickshell.Hyprland
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
-import "BreakViewModel.js" as BreakView
+import "lib/BreakViewModel.js" as BreakView
 
 Item {
   id: root
