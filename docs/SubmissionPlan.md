@@ -22,27 +22,27 @@ Goal: finish the current release-readiness path after the live lifecycle fix
 
 ## Execution checklist
 
-1. **Live QA in Omarchy**  
-   - run `npm run test:live` on a real session and capture pass output.  
+1. **Live QA in Omarchy**
+   - run `npm run test:live` on a real session and capture pass output.
    - run a manual live matrix: single-display and multi-display scenarios from
      `docs/Acceptance.md` using your real monitor layout.
-2. **Submission visuals**  
-   - confirm `preview.png` is final and follows the target dimensions.  
+2. **Submission visuals**
+   - confirm `preview.png` is final and follows the target dimensions.
    - confirm any planned store listing media is present and owned by the project.
-3. **Repository/publication gates**  
-   - owner confirms repository visibility decision and commit ownership.  
+3. **Repository/publication gates**
+   - owner confirms repository visibility decision and commit ownership.
    - set repository public only if owner policy allows.
-4. **Evidence completion**  
+4. **Evidence completion**
    - add local QA evidence row + live QA evidence rows in
-     `docs/ReleaseEvidence.md` and `docs/Acceptance.md` record tables.  
+     `docs/ReleaseEvidence.md` and `docs/Acceptance.md` record tables.
    - add a one-line QA summary for the `test:live` pass/fail status.
-5. **Release lockstep**  
+5. **Release lockstep**
    - update `manifest.json` and `package.json` together if version changes are
-     required.  
+     required.
    - rerun `npm run check` and `npm run test:release` at the exact release commit.
-6. **Marketplace submission prep**  
+6. **Marketplace submission prep**
    - complete `docs/MarketplaceChecklist.md` owner-gated items (public status,
-     live evidence links, ownership confirmation, commit verification).  
+     live evidence links, ownership confirmation, commit verification).
    - keep final marketplace body draft in `docs/MarketplaceChecklist.md` for review.
 
 ## Risks and blockers
