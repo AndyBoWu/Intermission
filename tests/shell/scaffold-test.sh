@@ -57,6 +57,8 @@ runtime_files=(
   "$PROJECT_ROOT/Overlay.qml"
 )
 [[ ! -f $PROJECT_ROOT/Engine.js ]] || runtime_files+=("$PROJECT_ROOT/Engine.js")
+[[ ! -f $PROJECT_ROOT/Settings.js ]] || runtime_files+=("$PROJECT_ROOT/Settings.js")
+[[ ! -f $PROJECT_ROOT/Panel.qml ]] || runtime_files+=("$PROJECT_ROOT/Panel.qml")
 
 if grep -Eni '(^|[^[:alnum:]_])(sudo|systemctl|curl|wget)([^[:alnum:]_]|$)|https?://|execDetached|Process[[:space:]]*\{' "${runtime_files[@]}"; then
   fail "runtime scaffold contains a prohibited dependency"
@@ -70,5 +72,21 @@ grep -Eq 'Engine\.activitySignal' "$PROJECT_ROOT/Service.qml" \
   || fail "service must route idle signals through the pure engine"
 grep -Eq 'Engine\.heartbeat' "$PROJECT_ROOT/Service.qml" \
   || fail "service must route timer gaps through the pure engine"
+
+[[ -f $PROJECT_ROOT/Panel.qml ]] || fail "bar control panel is missing"
+grep -Eq 'Qt\.resolvedUrl\("Panel\.qml"\)' "$PROJECT_ROOT/BarWidget.qml" \
+  || fail "bar widget must own one nested panel loader"
+grep -Eq 'KeyboardPanel[[:space:]]*\{' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must use the keyboard-capable host"
+grep -Eq 'Keys\.onEscapePressed:[[:space:]]*root\.close' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must expose Escape close"
+grep -Eq 'updateEntryInline' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must persist inline settings"
+grep -Eq 'summonBarWidget' "$PROJECT_ROOT/Service.qml" \
+  || fail "service showPanel must route to a live bar widget"
+grep -Eq 'function stableIpcError\(error\)' "$PROJECT_ROOT/Service.qml" \
+  || fail "service IPC must normalize internal errors"
+grep -Eq 'function showPanel\(payloadJson: string\)' "$PROJECT_ROOT/Service.qml" \
+  || fail "service IPC must expose showPanel"
 
 echo "ok - scaffold contract"
