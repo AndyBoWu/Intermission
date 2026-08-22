@@ -215,6 +215,7 @@ npm test
 npm run test:static
 npm run test:shell
 npm run audit:release
+npm run lint:workflows
 ```
 
 Run the complete portable gate with:
@@ -237,6 +238,10 @@ QML import both fail. GitHub Actions runs the same suite against a frozen
 required baseline on pull requests and against the current Omarchy `quattro`
 branch on a weekly/manual canary.
 
+`lint:workflows` requires Docker. It runs immutable actionlint and zizmor
+images against the workflow and Dependabot configuration without granting a
+GitHub token or allowing the analyzers to make network requests.
+
 Run the live test only from an Omarchy session where this checkout is already
 installed and enabled. Current release evidence and environment limits are
 recorded in [Release Evidence](docs/ReleaseEvidence.md).
@@ -246,6 +251,7 @@ recorded in [Release Evidence](docs/ReleaseEvidence.md).
 - [Planning Document](docs/Planning.md) — product scope, milestones, and tickets
 - [Runtime and IPC Contracts](docs/Contracts.md) — settings, state, recovery, and commands
 - [Acceptance Guide](docs/Acceptance.md) — local checks, live scenarios, and visual evidence
+- [Automation Security](docs/AutomationSecurity.md) — CI ownership, suppressions, and launch settings
 - [Marketplace Checklist](docs/MarketplaceChecklist.md) — owner-gated publication preparation
 
 ## License
