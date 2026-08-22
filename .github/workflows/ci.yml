@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: CI / Portable quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out Intermission
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24
+
+      - name: Install portable check tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes jq ripgrep shellcheck
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Run static checks
+        run: npm run test:static
+
+      - name: Run release audit
+        run: npm run audit:release
+
+  manifest:
+    name: CI / Omarchy manifest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      OMARCHY_COMMIT: 13a969e1ab500a692e1e4134ed6380453fc92f5c
+
+    steps:
+      - name: Check out Intermission
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24
+
+      - name: Install manifest check tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes jq
+
+      - name: Check out the pinned Omarchy validator
+        run: |
+          omarchy_root="$RUNNER_TEMP/omarchy-$OMARCHY_COMMIT"
+          git init --quiet "$omarchy_root"
+          git -C "$omarchy_root" remote add origin https://github.com/basecamp/omarchy.git
+          git -C "$omarchy_root" fetch --quiet --depth=1 origin "$OMARCHY_COMMIT"
+          git -C "$omarchy_root" checkout --quiet --detach FETCH_HEAD
+          echo "OMARCHY_PATH=$omarchy_root" >> "$GITHUB_ENV"
+
+      - name: Validate the plugin scaffold
+        run: npm run test:shell

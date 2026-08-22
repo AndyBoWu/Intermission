@@ -5,19 +5,22 @@ that require a real Omarchy and Wayland session.
 
 ## 1. Checkout checks
 
-Requirements: Node.js, npm, Bash, jq, and an Omarchy source checkout exposed
-through `OMARCHY_PATH`. In the shared development workspace, the shell check
-also discovers a sibling `omarchy-core` checkout.
+Requirements: Node.js, npm, Bash, jq, ripgrep, shellcheck, and an Omarchy
+source checkout exposed through `OMARCHY_PATH`. In the shared development
+workspace, the shell check also discovers a sibling `omarchy-core` checkout.
 
 ```sh
 npm test
+npm run test:static
 npm run test:shell
 ```
 
-The unit command runs dependency-free JavaScript tests. The shell command
-validates the root manifest, required files, entry points, single-instance bar
-metadata, required lifecycle declarations, symlink policy, and prohibited
-runtime dependencies. Behavioral lifecycle coverage belongs to the live test.
+The unit command runs dependency-free JavaScript tests. The static command
+checks JavaScript and Bash syntax, shell lint, JSON parsing, and whitespace.
+The shell command validates the root manifest, required files, entry points,
+single-instance bar metadata, required lifecycle declarations, symlink policy,
+and prohibited runtime dependencies. Behavioral lifecycle coverage belongs to
+the live test.
 
 ## 2. QML lint
 

@@ -1,5 +1,7 @@
 # Intermission
 
+[![CI](https://github.com/AndyBoWu/Intermission/actions/workflows/ci.yml/badge.svg)](https://github.com/AndyBoWu/Intermission/actions/workflows/ci.yml)
+
 A calm, idle-aware break coach for Omarchy Quattro.
 
 Intermission counts active use instead of wall-clock time, recognizes natural
@@ -210,8 +212,15 @@ The portable local and static checks are:
 
 ```sh
 npm test
+npm run test:static
 npm run test:shell
 npm run audit:release
+```
+
+Run the complete portable gate with:
+
+```sh
+npm run check:portable
 ```
 
 The remaining checks require an Omarchy/Quickshell development environment:

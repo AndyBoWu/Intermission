@@ -5,10 +5,12 @@
   "description": "Verification commands for the Intermission Omarchy plugin.",
   "scripts": {
     "test": "node tests/unit/run.js",
+    "test:static": "bash tests/static-checks.sh",
     "test:shell": "bash tests/shell/scaffold-test.sh",
     "test:live": "bash tests/shell/live-lifecycle-test.sh",
     "lint:qml": "bash tests/qml-lint.sh",
     "audit:release": "bash tests/release-audit.sh",
-    "check": "npm run test && npm run test:shell && npm run audit:release && npm run lint:qml"
+    "check:portable": "npm test && npm run test:static && npm run test:shell && npm run audit:release",
+    "check": "npm run check:portable && npm run lint:qml"
   }
 }
