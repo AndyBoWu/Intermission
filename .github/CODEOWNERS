@@ -1,0 +1,4 @@
+/.github/** @AndyBoWu
+/tests/workflow-security.sh @AndyBoWu
+/tests/release-audit.sh @AndyBoWu
+/docs/AutomationSecurity.md @AndyBoWu
