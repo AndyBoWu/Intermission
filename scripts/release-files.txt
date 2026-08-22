@@ -1,0 +1,13 @@
+BarWidget.qml
+LICENSE
+Overlay.qml
+Panel.qml
+README.md
+Service.qml
+lib/BreakViewModel.js
+lib/Engine.js
+lib/History.js
+lib/Settings.js
+lib/StateStore.js
+manifest.json
+preview.png

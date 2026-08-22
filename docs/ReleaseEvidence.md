@@ -40,12 +40,12 @@ intentionally moving and is not a required pull-request dependency.
 
 ## Environment-limited validation
 
-| Check | Status | Required environment |
+| Check | Status | Evidence or remaining requirement |
 | --- | --- | --- |
-| Live loader lifecycle | Pending | running `omarchy-shell` with the plugin installed and enabled |
-| Pointer and keyboard flow | Pending | real Omarchy panel and overlay surfaces |
+| Live loader lifecycle | Pass | Omarchy 4.0.0-1 at `1a4838a`; `npm run test:live` passed in the installed plugin |
+| Pointer and keyboard flow | Partial | owner-confirmed pointer activation plus Enter and three-second Escape paths; visible focus traversal remains |
 | Idle and suspend/resume | Pending | compositor `IdleMonitor` and a real session |
-| Single-display capture | Preview only | real compositor capture still required |
+| Single-display capture | Pass | Tokyo Night on eDP-1, 2880×1800 at 2×; full coverage, readable contrast, and no clipping |
 | Multi-display capture and hotplug | Preview only | two real outputs in an Omarchy/Wayland session |
 | Theme contrast and reduced motion | Pending | representative light/dark themes in a real shell |
 

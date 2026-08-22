@@ -13,7 +13,7 @@ marketplace publication remain explicit owner decisions.
 - [x] No symlinks, unexpected executable binaries, runtime downloads, remote
   services, or elevated operations
 - [x] Local manifest, unit, and static shell checks pass
-- [ ] QML lint passes in an Omarchy/Quickshell development environment
+- [x] QML lint passes in an Omarchy/Quickshell development environment
 - [ ] Live single-display and multi-display acceptance matrix passes in an
   Omarchy/Wayland session
 - [ ] Repository is public

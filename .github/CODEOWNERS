@@ -5,3 +5,6 @@
 /docs/Governance.md @AndyBoWu
 /CONTRIBUTING.md @AndyBoWu
 /scripts/github-governance.sh @AndyBoWu
+/scripts/release-assets.sh @AndyBoWu
+/scripts/release-files.txt @AndyBoWu
+/docs/Releasing.md @AndyBoWu
