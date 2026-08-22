@@ -11,13 +11,10 @@ provides an immediate way back to the desktop.
 
 ![Intermission overlay preview](preview.png)
 
-> The repository is currently private. Installation requires GitHub access
-> until the owner makes a separate visibility decision.
-
 ## Requirements
 
 - Omarchy with the Quattro shell plugin system
-- Git access to this repository
+- Git access to this repository (SSH) or HTTPS
 - no additional runtime packages or background services
 
 Plugins run inside the long-lived shell process and are not sandboxed. Review
@@ -25,16 +22,16 @@ the source before enabling any third-party plugin.
 
 ## Install
 
-With SSH access to the private repository:
-
-```sh
-omarchy plugin add git@github.com:AndyBoWu/Intermission.git --enable
-```
-
-If the repository is made public later, HTTPS installation can be used:
+Install from HTTPS:
 
 ```sh
 omarchy plugin add https://github.com/AndyBoWu/Intermission.git --enable
+```
+
+SSH access is also supported:
+
+```sh
+omarchy plugin add git@github.com:AndyBoWu/Intermission.git --enable
 ```
 
 The plugin adds one Intermission chip to the configured bar section. No user

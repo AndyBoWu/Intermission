@@ -20,7 +20,7 @@ pending row is not represented as a pass.
 | JSON fixtures | Pass | every tracked JSON file parses with `jq` |
 | Whitespace | Pass | `git diff --check` |
 | Repository release audit | Pass | `npm run audit:release` |
-| Repository visibility gate | Pass | GitHub reports `PRIVATE`; no visibility change was made |
+| Repository visibility gate | Pass | GitHub reports `PUBLIC`; owner-approved visibility change completed |
 
 ## Automated compatibility evidence
 
@@ -91,6 +91,7 @@ analysis, not a security audit.
 
 ## Release decision
 
-The repository remains private. The implementation may be reviewed and merged,
-but M2 live validation and marketplace submission remain owner-gated until the
+The repository is now public. The implementation may be reviewed and merged,
+but marketplace submission remains owner-gated until full M2 live validation is
+completed.
 pending target-session evidence is completed.

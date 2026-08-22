@@ -16,7 +16,7 @@ marketplace publication remain explicit owner decisions.
 - [x] QML lint passes in an Omarchy/Quickshell development environment
 - [ ] Live single-display and multi-display acceptance matrix passes in an
   Omarchy/Wayland session
-- [ ] Repository is public
+- [x] Repository is public
 - [ ] Owner confirms the exact commit and preview ownership for submission
 
 ## Proposed listing metadata
@@ -57,7 +57,7 @@ runtime package, or privileged setup.
 
 ### Submission checklist
 
-- [ ] The repository is public and contains installation and removal instructions.
+- [x] The repository is public and contains installation and removal instructions.
 - [x] I have documented the plugin license and any external dependencies.
 - [ ] I confirm that I own or have permission to submit this plugin and its preview assets.
 - [x] The plugin does not overwrite user configuration without explicit consent.
@@ -69,7 +69,7 @@ runtime package, or privileged setup.
 Before submission:
 
 1. finish the real Omarchy live matrix and replace pending evidence;
-2. choose whether to make the repository public;
+2. confirm public visibility and exact install/remove links;
 3. confirm the exact commit reached protected `main` through the documented
    pull-request and required-check path;
 4. review that commit and confirm ownership of code and preview assets;
@@ -77,5 +77,5 @@ Before submission:
 6. show the final title and body to the owner for explicit approval;
 7. only then create the marketplace issue.
 
-No step in the current implementation changes visibility or creates a
-marketplace submission.
+Visibility is now public. The next step is only owner-approved creation
+of the Omarchy marketplace issue.

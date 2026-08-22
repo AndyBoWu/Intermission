@@ -3,13 +3,10 @@
 Intermission is governed as a solo-maintainer repository without weakening the
 validation path. Repository-level Actions, token, fork, and merge settings are
 active and verified. The tracked `main` ruleset payload is
-`.github/rulesets/main.json`, but GitHub does not offer rulesets for private
-repositories on the current Free plan. The repository remains private, so the
-ruleset is prepared but not active.
+`.github/rulesets/main.json`, and this is now applied on a public repository.
 
-This is a documented platform limitation, not an authorization to change
-visibility. Upgrading the account plan or making the repository public requires
-a separate owner decision.
+Visibility and ruleset behavior are separate owner decisions. The current public
+repository keeps this ruleset payload and policy as-is.
 
 ## Protected main
 
@@ -77,9 +74,8 @@ Read back and verify every available mutable setting without changing it:
 npm run governance:verify
 ```
 
-On the current private Free plan, both commands report the ruleset as
-`limited` while still verifying the active settings. Any other missing or
-drifted setting fails verification.
+When limitations are present, both commands report the reason in the evidence.
+Any other missing or drifted setting fails verification.
 
 Run the readback after any workflow/check-name, collaborator, fork-policy,
 merge-method, visibility, or plan change, and at least quarterly. Record

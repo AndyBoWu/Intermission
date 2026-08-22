@@ -47,13 +47,11 @@ release, and uses `--verify-tag` when creating the release. Concurrency permits
 only one run for a given tag. No workflow creates or submits a Marketplace
 listing.
 
-Required-reviewer environment protection is unavailable while this private
-repository is on GitHub Free. The publishing job independently reads back that
-protection rule and fails before any release write if it is missing. Do not
-make the repository public merely to exercise this path; plan or visibility
-changes require separate owner approval.
+Publishing requires an environment named `release` with at least one required
+reviewer. The publishing job reads back that protection rule and fails before any
+release write if it is missing. Plan or visibility changes remain separate owner
+decisions.
 
-GitHub artifact attestations are also unavailable for private repositories on
-this plan. Add the official attestation action, with only the documented
-`id-token: write` and `attestations: write` permissions, after public launch or
-an eligible plan change.
+Add GitHub artifact attestations with the official attestation action, using only
+`id-token: write` and `attestations: write` permissions, when your account plan
+and policy allow it.
