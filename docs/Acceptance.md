@@ -44,10 +44,17 @@ npm run test:live
 ```
 
 `test:live` is intentionally non-installing. It requires the plugin to be
-present and enabled, summons the overlay entry, waits for its loader-owned
-state to become open, hides it, waits for closed, and always attempts cleanup
-if the command fails. It verifies shell lifecycle and IPC routing, not visible
-pixels; rendered overlay coverage begins with #7.
+present and enabled, starts an accelerated break through the service, verifies
+the automatic overlay, exercises idempotent hide and reopen IPC, completes the
+break, and always attempts cleanup if the command fails. Close checks use a
+one-second bound. It verifies shell lifecycle and IPC routing, not visible
+pixels or compositor focus behavior.
+
+Runtime recovery uses
+`${XDG_STATE_HOME:-~/.local/state}/intermission/session.json`. For recovery
+checks, preserve a disposable copy of that file, restart the shell in each
+phase listed below, verify the expected state, then restore or remove the copy.
+Never run destructive snapshot tests against a session you need to keep.
 
 ## 4. Scenario matrix
 

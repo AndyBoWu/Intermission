@@ -1,8 +1,10 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import "Engine.js" as Engine
 import "Settings.js" as Settings
+import "StateStore.js" as StateStore
 
 Item {
   id: root
@@ -14,6 +16,9 @@ Item {
   property var pluginRegistry: null
 
   readonly property string moduleName: "io.github.andybowu.intermission"
+  readonly property string home: Quickshell.env("HOME") || ""
+  readonly property string xdgStateHome: Quickshell.env("XDG_STATE_HOME") || ""
+  readonly property string sessionPath: StateStore.sessionPath(xdgStateHome, home)
 
   property bool autoStart: true
   property var configuration: Settings.normalize({})
@@ -24,6 +29,7 @@ Item {
   property var lastEffects: []
   property var lastError: null
   property bool overlayOpen: false
+  property bool snapshotWritable: true
   property bool ready: false
   property bool initialized: false
 
@@ -32,6 +38,63 @@ Item {
   readonly property int suspensionThresholdMs: 5000
   readonly property bool isIdle: activityContext && activityContext.isIdle === true
   readonly property var publicState: Engine.publicState(runtimeState, displayNowEpochMs, settings)
+
+  function effectNamed(effects, name) {
+    var values = Array.isArray(effects) ? effects : []
+    for (var i = 0; i < values.length; i++) {
+      if (values[i] && values[i].type === name) return true
+    }
+    return false
+  }
+
+  function openOverlay() {
+    if (root.runtimeState.phase !== "break") {
+      root.lastError = { code: "INVALID_STATE", message: "No break is active" }
+      return false
+    }
+    if (root.overlayOpen) return true
+    var opened = !!(root.shell && typeof root.shell.summon === "function" &&
+      root.shell.summon(root.moduleName, "{}"))
+    if (!opened) root.lastError = { code: "UI_UNAVAILABLE", message: "Break overlay is unavailable" }
+    return opened
+  }
+
+  function hideOverlay(reason) {
+    var wasOpen = root.overlayOpen
+    var hidden = !!(root.shell && typeof root.shell.hide === "function" &&
+      root.shell.hide(root.moduleName))
+    root.overlayOpen = false
+    if (!hidden && wasOpen) {
+      root.lastError = { code: "UI_UNAVAILABLE", message: "Break overlay could not be closed" }
+      return false
+    }
+    return true
+  }
+
+  function processRuntimeResult(result) {
+    if (!result) return
+    if (result.changed === true) root.persistSnapshot()
+
+    var effects = result.effects || []
+    if (root.runtimeState.phase === "break" &&
+        (root.effectNamed(effects, "break-started") || root.effectNamed(effects, "restore-overlay"))) {
+      Qt.callLater(root.openOverlay)
+    } else if (result.changed === true && root.runtimeState.phase !== "break" && root.overlayOpen) {
+      Qt.callLater(function() { root.hideOverlay("state-change") })
+    }
+  }
+
+  function persistSnapshot() {
+    if (!root.initialized || !root.snapshotWritable) return true
+    var snapshot = Engine.snapshotState(root.runtimeState, Date.now())
+    var encoded = StateStore.serializeSnapshot(snapshot)
+    if (!encoded.ok) {
+      root.lastError = { code: "PERSISTENCE_ERROR", message: encoded.message }
+      return false
+    }
+    stateFile.setText(encoded.text)
+    return true
+  }
 
   function applyActivityResult(result) {
     if (!result || !result.ok) {
@@ -46,6 +109,7 @@ Item {
     root.activityContext = result.context
     root.lastEffects = result.effects || []
     root.lastError = null
+    root.processRuntimeResult(result)
     return true
   }
 
@@ -61,6 +125,7 @@ Item {
     root.runtimeState = result.state
     root.lastEffects = result.effects || []
     root.lastError = null
+    root.processRuntimeResult(result)
     return true
   }
 
@@ -123,16 +188,33 @@ Item {
     root.settings = Engine.normalizeSettings(normalized)
   }
 
-  function initialize() {
+  function initializeFromSnapshot(rawSnapshot, source) {
     if (root.initialized) return
     var now = Date.now()
     root.displayNowEpochMs = now
     root.updateSettings(root.inlineSettings())
     root.runtimeState = Engine.createState(now, root.settings)
     root.activityContext = Engine.createActivityContext(now)
+    root.snapshotWritable = source !== "unavailable"
+
+    var restored = null
+    if (source === "loaded") {
+      var parsed = StateStore.parseSnapshotText(rawSnapshot)
+      if (parsed.reason === "UNSUPPORTED_VERSION") root.snapshotWritable = false
+      if (parsed.ok) restored = Engine.restoreState(parsed.value, now, root.settings)
+    }
+
+    if (restored && restored.ok) {
+      root.runtimeState = restored.state
+      root.lastEffects = restored.effects || []
+    }
+
     root.initialized = true
     root.ready = true
-    if (root.autoStart) root.dispatch({ type: "start" })
+    root.lastError = null
+
+    if (restored && restored.ok) root.processRuntimeResult(restored)
+    else if (source === "missing" && root.autoStart) root.dispatch({ type: "start" })
     root.handleIdleChanged()
   }
 
@@ -148,6 +230,13 @@ Item {
   }
   function completeBreak(source) {
     return root.dispatch({ type: "completeBreak", source: source || "panel" })
+  }
+  function emergencyExit() {
+    var completed = root.runtimeState.phase === "break"
+      ? root.dispatch({ type: "emergencyExit" }) : true
+    if (!completed) return { stateCompleted: false, overlayHidden: false }
+    var hidden = root.hideOverlay("emergency")
+    return { stateCompleted: true, overlayHidden: hidden }
   }
   function snooze(seconds) {
     var event = { type: "snooze" }
@@ -227,6 +316,7 @@ Item {
     else if (command === "skip") allowed = ["reason"]
     else if (command === "startBreak") allowed = ["kind"]
     else if (command === "completeBreak") allowed = ["source"]
+    else if (command === "hideOverlay") allowed = ["reason"]
     if (!root.onlyKeys(payload, allowed))
       return root.ipcError(command, "INVALID_ARGUMENT", "Payload contains an unknown field")
 
@@ -249,6 +339,12 @@ Item {
       if (["overlay", "panel", "ipc"].indexOf(source) === -1)
         return root.ipcError(command, "INVALID_ARGUMENT", "Completion source is invalid")
       succeeded = root.completeBreak(source)
+    } else if (command === "openOverlay") {
+      succeeded = root.openOverlay()
+    } else if (command === "hideOverlay") {
+      if (payload.reason !== undefined && payload.reason !== "ipc")
+        return root.ipcError(command, "INVALID_ARGUMENT", "Hide reason must be ipc")
+      succeeded = root.hideOverlay(payload.reason || "ipc")
     } else if (command === "showPanel") {
       succeeded = root.showPanel()
       if (!succeeded) return root.ipcError(command, "UI_UNAVAILABLE", "No live bar panel is available")
@@ -258,6 +354,30 @@ Item {
 
     if (succeeded) return root.ipcResponse(command, true, null)
     return root.ipcResponse(command, false, root.stableIpcError(root.lastError))
+  }
+
+  FileView {
+    id: stateFile
+    path: root.sessionPath
+    watchChanges: false
+    atomicWrites: true
+    blockWrites: true
+    printErrors: false
+
+    onLoaded: {
+      var raw = text()
+      Qt.callLater(function() { root.initializeFromSnapshot(raw, "loaded") })
+    }
+    onLoadFailed: function(error) {
+      var source = error === FileViewError.FileNotFound ? "missing" : "unavailable"
+      Qt.callLater(function() { root.initializeFromSnapshot("", source) })
+    }
+    onSaveFailed: function(error) {
+      root.lastError = {
+        code: "PERSISTENCE_ERROR",
+        message: "Runtime snapshot could not be saved: " + FileViewError.toString(error)
+      }
+    }
   }
 
   IdleMonitor {
@@ -287,10 +407,18 @@ Item {
     function skip(payloadJson: string): string { return root.runIpc("skip", payloadJson) }
     function startBreak(payloadJson: string): string { return root.runIpc("startBreak", payloadJson) }
     function completeBreak(payloadJson: string): string { return root.runIpc("completeBreak", payloadJson) }
+    function openOverlay(payloadJson: string): string { return root.runIpc("openOverlay", payloadJson) }
+    function hideOverlay(payloadJson: string): string { return root.runIpc("hideOverlay", payloadJson) }
     function showPanel(payloadJson: string): string { return root.runIpc("showPanel", payloadJson) }
   }
 
   Component.onCompleted: {
-    Qt.callLater(root.initialize)
+    if (root.sessionPath === "")
+      Qt.callLater(function() { root.initializeFromSnapshot("", "unavailable") })
+  }
+
+  Component.onDestruction: {
+    if (root.initialized) root.persistSnapshot()
+    root.hideOverlay("shutdown")
   }
 }

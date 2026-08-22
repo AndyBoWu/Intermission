@@ -20,14 +20,17 @@ jq -e --arg id "$PLUGIN_ID" '.[] | select(.id == $id and .enabled == true)' <<<"
 
 cleanup() {
   omarchy-shell shell hide "$PLUGIN_ID" >/dev/null 2>&1 || true
+  omarchy-shell "$PLUGIN_ID" hideOverlay '{"reason":"ipc"}' >/dev/null 2>&1 || true
+  omarchy-shell "$PLUGIN_ID" completeBreak '{"source":"ipc"}' >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
 wait_for_status() {
   local expected=$1
+  local attempts=${2:-30}
   local actual=""
 
-  for _attempt in {1..30}; do
+  for ((attempt = 0; attempt < attempts; attempt += 1)); do
     actual=$(omarchy-shell shell call "$PLUGIN_ID" status '{}' 2>/dev/null || true)
     [[ $actual == "$expected" ]] && return 0
     sleep 0.1
@@ -36,12 +39,28 @@ wait_for_status() {
   fail "expected overlay status '$expected', got '${actual:-unavailable}'"
 }
 
-summon_result=$(omarchy-shell shell summon "$PLUGIN_ID" '{}')
-[[ $summon_result == ok ]] || fail "summon failed: $summon_result"
+call_service() {
+  local method=$1
+  local payload=$2
+  local result=""
+
+  result=$(omarchy-shell "$PLUGIN_ID" "$method" "$payload")
+  jq -e '.ok == true' <<<"$result" >/dev/null || fail "$method failed: $result"
+}
+
+call_service start '{}'
+call_service startBreak '{"kind":"short"}'
 wait_for_status open
 
-omarchy-shell shell hide "$PLUGIN_ID"
-wait_for_status closed
+call_service hideOverlay '{"reason":"ipc"}'
+wait_for_status closed 10
+
+call_service openOverlay '{}'
+call_service openOverlay '{}'
+wait_for_status open
+
+call_service completeBreak '{"source":"ipc"}'
+wait_for_status closed 10
 
 trap - EXIT
-echo "ok - live loader transitions closed -> open -> closed"
+echo "ok - live break lifecycle opens, hides, reopens, and completes"

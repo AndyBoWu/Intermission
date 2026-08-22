@@ -139,6 +139,16 @@ test("manual break and completion use the same cadence transition", () => {
   assertEqual(completed.effects[0].actualDurationMs, 20 * SECOND);
 });
 
+test("emergency exit completes the break with an explicit safety effect", () => {
+  const options = settings();
+  const activeBreak = Engine.transition(started(0, options), { type: "startBreak" }, 10 * SECOND, options).state;
+  const exited = Engine.transition(activeBreak, { type: "emergencyExit" }, 15 * SECOND, options);
+  assert(exited.ok);
+  assertEqual(exited.state.phase, "active");
+  assertEqual(exited.effects[0].type, "break-emergency-exit");
+  assertEqual(exited.effects[0].reason, "escape-hold");
+});
+
 test("four work cycles end with a long break", () => {
   const options = settings();
   let state = started(0, options);
@@ -247,6 +257,21 @@ test("restore excludes shell downtime from active use", () => {
   assertEqual(restored.state.phase, "active");
   assertEqual(restored.state.activeElapsedMs, 10 * SECOND);
   assertEqual(Engine.publicState(restored.state, 30 * SECOND, options).remainingSeconds, 80);
+});
+
+test("snapshot captures active use without mutating live state", () => {
+  const options = settings({ naturalBreakSeconds: 120 });
+  const state = started(0, options);
+  const before = JSON.stringify(state);
+  const snapshot = Engine.snapshotState(state, 25 * SECOND);
+  assertEqual(snapshot.savedAtEpochMs, 25 * SECOND);
+  assertEqual(snapshot.activeElapsedMs, 25 * SECOND);
+  assertEqual(snapshot.activeStartedAtEpochMs, 25 * SECOND);
+  assertEqual(JSON.stringify(state), before);
+
+  const restored = Engine.restoreState(snapshot, 35 * SECOND, options);
+  assert(restored.ok);
+  assertEqual(restored.state.activeElapsedMs, 25 * SECOND);
 });
 
 test("idle reload stays idle and excludes shell downtime", () => {
