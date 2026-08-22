@@ -344,7 +344,7 @@ Tracking Epic: [#14 — Build Intermission](https://github.com/AndyBoWu/Intermis
 
 Goal: prove the plugin contract and make every later change testable.
 
-- [ ] [#1 — Scaffold Intermission as a Quattro root plugin](https://github.com/AndyBoWu/Intermission/issues/1)
+- [x] [#1 — Scaffold Intermission as a Quattro root plugin](https://github.com/AndyBoWu/Intermission/issues/1)
 - [ ] [#2 — Define config, runtime snapshot, and IPC contracts](https://github.com/AndyBoWu/Intermission/issues/2)
 - [ ] [#3 — Establish test and visual verification harness](https://github.com/AndyBoWu/Intermission/issues/3)
 
