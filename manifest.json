@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.andybowu.intermission",
+  "name": "Intermission",
+  "version": "0.1.0",
+  "author": "Andy Wu",
+  "license": "MIT",
+  "description": "A calm, idle-aware break coach for Omarchy Quattro.",
+  "kinds": [
+    "service",
+    "bar-widget",
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml",
+    "overlay": "Overlay.qml"
+  },
+  "barWidget": {
+    "displayName": "Intermission",
+    "description": "Break status and controls",
+    "category": "Productivity",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
