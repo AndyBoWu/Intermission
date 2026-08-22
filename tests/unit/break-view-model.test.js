@@ -1,4 +1,4 @@
-const BreakView = require("../../BreakViewModel.js");
+const BreakView = require("../../lib/BreakViewModel.js");
 
 test("break view formats a stable minute and second countdown", () => {
   assertEqual(BreakView.formatRemaining(0), "0:00");

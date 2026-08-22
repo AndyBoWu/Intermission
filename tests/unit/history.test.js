@@ -1,4 +1,4 @@
-const History = require("../../History.js");
+const History = require("../../lib/History.js");
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 7, 21, 12);

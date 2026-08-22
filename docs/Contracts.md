@@ -379,14 +379,14 @@ panel lifecycle.
 | Component | Owns | Must not own |
 | --- | --- | --- |
 | Quattro shell | Plugin enablement, inline settings entry, component lifecycle | Timer transitions or history |
-| `Engine.js` | Pure transitions, cadence calculations, public-state projection | File I/O, QML objects, or clocks |
+| `lib/Engine.js` | Pure transitions, cadence calculations, public-state projection | File I/O, QML objects, or clocks |
 | `Service.qml` | Current runtime state, timers, idle signals, IPC, atomic file I/O, orchestration | Per-display visual state |
-| `StateStore.js` | Pure validation, normalization, serialization, and recovery decisions | File I/O, QML objects, or product transitions |
-| `History.js` | Pure event validation, retention, export, and humane aggregation | File I/O, app observation, or runtime transitions |
+| `lib/StateStore.js` | Pure validation, normalization, serialization, and recovery decisions | File I/O, QML objects, or product transitions |
+| `lib/History.js` | Pure event validation, retention, export, and humane aggregation | File I/O, app observation, or runtime transitions |
 | `BarWidget.qml` | Read-only status projection and user intents | Canonical timer state or IPC handler |
 | `Panel.qml` | Editable form state until save | Runtime countdown or persistence policy |
 | `Overlay.qml` | Per-display rendering and focus state | Completion policy or canonical break state |
 
-All mutations flow through `Service.qml` into `Engine.js`. The service persists
-data encoded and validated by `StateStore.js`. Views send intents and render
-the resulting public state.
+All mutations flow through `Service.qml` into `lib/Engine.js`. The service
+persists data encoded and validated by `lib/StateStore.js`. Views send intents
+and render the resulting public state.

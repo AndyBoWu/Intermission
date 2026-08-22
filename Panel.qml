@@ -1,7 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import "Settings.js" as Settings
+import "lib/Settings.js" as Settings
 
 Panel {
   id: root

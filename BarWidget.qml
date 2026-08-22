@@ -1,7 +1,7 @@
 import QtQuick
 import qs.Ui
 import qs.Commons
-import "Settings.js" as Settings
+import "lib/Settings.js" as Settings
 
 BarWidget {
   id: root

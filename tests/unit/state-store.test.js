@@ -1,4 +1,4 @@
-const StateStore = require("../../StateStore.js");
+const StateStore = require("../../lib/StateStore.js");
 
 test("state store resolves the XDG session path with a home fallback", () => {
   assertEqual(StateStore.sessionPath("/tmp/state/", "/home/user"), "/tmp/state/intermission/session.json");
