@@ -70,10 +70,12 @@ Before submission:
 
 1. finish the real Omarchy live matrix and replace pending evidence;
 2. choose whether to make the repository public;
-3. review the exact commit and confirm ownership of code and preview assets;
-4. rerun marketplace compatibility and static security checks on that commit;
-5. show the final title and body to the owner for explicit approval;
-6. only then create the marketplace issue.
+3. confirm the exact commit reached protected `main` through the documented
+   pull-request and required-check path;
+4. review that commit and confirm ownership of code and preview assets;
+5. rerun marketplace compatibility and static security checks on that commit;
+6. show the final title and body to the owner for explicit approval;
+7. only then create the marketplace issue.
 
 No step in the current implementation changes visibility or creates a
 marketplace submission.

@@ -2,3 +2,6 @@
 /tests/workflow-security.sh @AndyBoWu
 /tests/release-audit.sh @AndyBoWu
 /docs/AutomationSecurity.md @AndyBoWu
+/docs/Governance.md @AndyBoWu
+/CONTRIBUTING.md @AndyBoWu
+/scripts/github-governance.sh @AndyBoWu

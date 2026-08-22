@@ -55,12 +55,17 @@ than maintaining a permanently empty check.
 
 ## Repository settings and public-launch runbook
 
-Some controls cannot be expressed in tracked files. The repository owner must
-keep the default workflow token permission read-only, require approval before
-fork pull-request workflows run, require the checks above in the main-branch
-ruleset, and enable the setting that requires actions to be pinned to a
-full-length commit SHA. Require a CODEOWNERS review for automation changes when
-more than one maintainer can approve pull requests.
+Some controls cannot be expressed in tracked files. The repository owner keeps
+the default workflow token permission read-only, requires approval before fork
+pull-request workflows run, and requires actions to be pinned to a full-length
+commit SHA. These settings are active. The checks above are prepared in the
+tracked main-branch ruleset, but GitHub cannot enforce that ruleset while this
+private repository is on the Free plan. Require a CODEOWNERS review for
+automation changes when more than one maintainer can approve pull requests.
+
+The exact protected-main, Actions allowlist, token, merge, and bypass settings
+are defined and reviewed in [Repository Governance](Governance.md). Run
+`npm run governance:verify` with an authenticated GitHub CLI to detect drift.
 
 The repository is private on an account where CodeQL code scanning is not
 currently available. The committed CodeQL job therefore checks repository
