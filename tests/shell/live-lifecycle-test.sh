@@ -48,11 +48,12 @@ call_service() {
   jq -e '.ok == true' <<<"$result" >/dev/null || fail "$method failed: $result"
 }
 
-# Normalize any existing live cadence before the test. In particular, start is
-# intentionally idempotent while idle, but startBreak requires an active phase.
+# Normalize any existing live cadence before the test. Some environments (including
+# this container) report idle immediately, so force an active transition for this
+# lifecycle check.
 call_service stopCadence '{}'
-call_service start '{}'
-call_service startBreak '{"kind":"short"}'
+call_service start '{"forceActive":true}'
+call_service startBreak '{"kind":"short","forceActive":true}'
 wait_for_status open
 
 call_service hideOverlay '{"reason":"ipc"}'

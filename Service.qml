@@ -391,11 +391,16 @@ Item {
   function dispatch(event) {
     var now = Date.now()
     if (!root.observe(now)) return false
+    var skipIdleTransition = event && event.__skipIdleTransition === true
 
     var result = Engine.transition(root.runtimeState, event, now, root.settings)
     if (!root.applyTransitionResult(result)) return false
 
-    if (root.activityContext.isIdle && root.runtimeState.phase === "active") {
+    if (
+      !skipIdleTransition &&
+      root.activityContext.isIdle &&
+      root.runtimeState.phase === "active"
+    ) {
       result = Engine.transition(root.runtimeState, {
         type: "enterIdle",
         startedAtEpochMs: now
@@ -480,13 +485,18 @@ Item {
     root.handleIdleChanged()
   }
 
-  function start() { return root.dispatch({ type: "start" }) }
+  function start(forceActive) {
+    var event = { type: "start" }
+    if (forceActive === true) event.__skipIdleTransition = true
+    return root.dispatch(event)
+  }
   function stop() { return root.dispatch({ type: "stop" }) }
   function pause() { return root.dispatch({ type: "pause" }) }
   function resume() { return root.dispatch({ type: "resume" }) }
   function skip(reason) { return root.dispatch({ type: "skip", reason: reason || "user" }) }
-  function startBreak(kind) {
+  function startBreak(kind, forceActive) {
     var event = { type: "startBreak" }
+    if (forceActive === true) event.__skipIdleTransition = true
     if (kind !== undefined && kind !== null && kind !== "") event.kind = kind
     return root.dispatch(event)
   }
@@ -614,9 +624,10 @@ Item {
     if (!parsed.ok) return root.ipcError(command, "INVALID_ARGUMENT", parsed.error)
     var payload = parsed.value
     var allowed = []
-    if (command === "snooze") allowed = ["seconds"]
+    if (command === "start") allowed = ["forceActive"]
+    else if (command === "snooze") allowed = ["seconds"]
     else if (command === "skip") allowed = ["reason"]
-    else if (command === "startBreak") allowed = ["kind"]
+    else if (command === "startBreak") allowed = ["kind", "forceActive"]
     else if (command === "completeBreak") allowed = ["source"]
     else if (command === "hideOverlay") allowed = ["reason"]
     if (!root.onlyKeys(payload, allowed))
@@ -625,7 +636,7 @@ Item {
     var succeeded = false
     if (command === "status") return root.ipcResponse(command, true, null)
     if (command === "exportHistory") return root.ipcHistoryExport(command)
-    if (command === "start") succeeded = root.start()
+    if (command === "start") succeeded = root.start(payload.forceActive === true)
     else if (command === "stopCadence") succeeded = root.stop()
     else if (command === "pause") succeeded = root.pause()
     else if (command === "resume") succeeded = root.resume()
@@ -637,7 +648,7 @@ Item {
     } else if (command === "startBreak") {
       if (payload.kind !== undefined && payload.kind !== "short" && payload.kind !== "long")
         return root.ipcError(command, "INVALID_ARGUMENT", "Break kind must be short or long")
-      succeeded = root.startBreak(payload.kind)
+      succeeded = root.startBreak(payload.kind, payload.forceActive === true)
     } else if (command === "completeBreak") {
       var source = payload.source === undefined ? "ipc" : payload.source
       if (["overlay", "panel", "ipc"].indexOf(source) === -1)
