@@ -8,6 +8,7 @@ REPOSITORY='AndyBoWu/Intermission'
 RULESET_NAME='Protect main'
 RULESET_PATH="$PROJECT_ROOT/.github/rulesets/main.json"
 API_VERSION='2026-03-10'
+RULESET_PLAN_ERROR='Upgrade to GitHub Pro or make this repository public'
 
 fail() {
   echo "github-governance: $*" >&2
@@ -29,16 +30,42 @@ api() {
     "$@"
 }
 
+query_rulesets() {
+  local response
+
+  if response=$(api "repos/$REPOSITORY/rulesets?includes_parents=false" 2>&1); then
+    printf '%s\n' "$response"
+    return 0
+  fi
+
+  if [[ $response == *"$RULESET_PLAN_ERROR"* ]]; then
+    return 3
+  fi
+
+  printf '%s\n' "$response" >&2
+  return 1
+}
+
 find_ruleset_id() {
-  local rulesets
-  rulesets=$(api "repos/$REPOSITORY/rulesets?includes_parents=false")
-  jq -er --arg name "$RULESET_NAME" \
-    '[.[] | select(.name == $name and .source_type == "Repository")][0].id' \
-    <<< "$rulesets"
+  local ruleset_id rulesets status
+
+  if rulesets=$(query_rulesets); then
+    :
+  else
+    status=$?
+    return "$status"
+  fi
+
+  ruleset_id=$(jq -r --arg name "$RULESET_NAME" \
+    '[.[] | select(.name == $name and .source_type == "Repository")][0].id // empty' \
+    <<< "$rulesets") || return 1
+
+  [[ -n $ruleset_id ]] || return 4
+  printf '%s\n' "$ruleset_id"
 }
 
 apply_settings() {
-  local ruleset_id
+  local ruleset_id ruleset_status
 
   jq -n '{
     enabled: true,
@@ -79,10 +106,23 @@ apply_settings() {
   if ruleset_id=$(find_ruleset_id); then
     api --method PUT "repos/$REPOSITORY/rulesets/$ruleset_id" \
       --input "$RULESET_PATH" >/dev/null
+    return
   else
-    api --method POST "repos/$REPOSITORY/rulesets" \
-      --input "$RULESET_PATH" >/dev/null
+    ruleset_status=$?
   fi
+
+  case $ruleset_status in
+    3)
+      echo "limited - protected main ruleset requires GitHub Pro while this repository is private"
+      ;;
+    4)
+      api --method POST "repos/$REPOSITORY/rulesets" \
+        --input "$RULESET_PATH" >/dev/null
+      ;;
+    *)
+      fail "could not inspect the Protect main ruleset"
+      ;;
+  esac
 }
 
 verify_settings() {
@@ -131,7 +171,24 @@ verify_settings() {
   ' <<< "$fork_json" >/dev/null || fail "private fork workflow policy drifted"
   echo "ok - approved read-only private fork workflows"
 
-  ruleset_id=$(find_ruleset_id) || fail "Protect main ruleset is missing"
+  if ruleset_id=$(find_ruleset_id); then
+    :
+  else
+    local ruleset_status=$?
+    case $ruleset_status in
+      3)
+        echo "limited - protected main ruleset requires GitHub Pro while this repository is private"
+        return
+        ;;
+      4)
+        fail "Protect main ruleset is missing"
+        ;;
+      *)
+        fail "could not inspect the Protect main ruleset"
+        ;;
+    esac
+  fi
+
   ruleset_json=$(api "repos/$REPOSITORY/rulesets/$ruleset_id?includes_parents=false")
   jq -e '
     def rule($type): [.rules[] | select(.type == $type)][0];

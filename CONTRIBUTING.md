@@ -1,7 +1,9 @@
 # Contributing
 
-Intermission uses a protected, pull-request-only `main` branch. Work on a topic
-branch and keep each pull request focused enough to review and revert safely.
+Intermission uses a pull-request-only `main` policy. Work on a topic branch and
+keep each pull request focused enough to review and revert safely. GitHub's
+current private Free plan cannot enforce the prepared branch ruleset, so the
+maintainer must follow this policy manually until the plan supports it.
 
 ## Before opening a pull request
 
@@ -37,14 +39,16 @@ impossible to maintain. CODEOWNERS still identifies security-sensitive files
 and becomes an enforceable reviewer boundary if another maintainer is added.
 
 Use squash merge. Merge commits and rebase merges are disabled so `main` stays
-linear and every merged commit points back to its pull request. Force pushes
-and branch deletion are blocked.
+linear and every merged commit points back to its pull request. Do not force
+push to or delete `main`; the current plan cannot enforce those two controls.
 
 ## Emergency bypass
 
-Only AndyBoWu has bypass access, and only through a pull request. There is no
-direct-push bypass. Use it solely when a required check is unavailable or a
-time-critical safety/security correction cannot wait for the normal gate.
+The prepared ruleset gives only AndyBoWu bypass access, and only through a pull
+request. That bypass is not active while the ruleset is plan-blocked. Until it
+can be enabled, use the same documented emergency process solely when a
+required check is unavailable or a time-critical safety/security correction
+cannot wait for the normal gate.
 
 Before bypassing, record the failed or unavailable control and the reason in
 the pull request. Afterward, rerun every skipped check, link the results, and
