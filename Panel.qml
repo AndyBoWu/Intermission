@@ -496,6 +496,13 @@ Panel {
               }
             }
 
+            PanelSeparator { foreground: root.contentForeground }
+
+            Item {
+              width: parent.width
+              height: Style.space(8)
+            }
+
             Column {
               width: parent.width
               spacing: Style.space(5)
@@ -511,7 +518,7 @@ Panel {
                   : root.formatRemaining(root.state.remainingSeconds)
                 color: root.contentForeground
                 font.family: root.contentFontFamily
-                font.pixelSize: Style.font.displayLarge
+                font.pixelSize: Math.max(Style.font.displayLarge, Style.space(52))
                 font.bold: true
                 horizontalAlignment: Text.AlignHCenter
                 Accessible.role: Accessible.StaticText
@@ -531,7 +538,8 @@ Panel {
             }
 
             Rectangle {
-              width: parent.width
+              width: Math.min(parent.width, Style.space(240))
+              anchors.horizontalCenter: parent.horizontalCenter
               height: Style.space(3)
               radius: height / 2
               color: Qt.rgba(
@@ -555,7 +563,8 @@ Panel {
 
             Row {
               id: actionRow
-              width: parent.width
+              width: Math.min(parent.width, Style.space(340))
+              anchors.horizontalCenter: parent.horizontalCenter
               spacing: Style.space(8)
               readonly property int visibleCount: startBreakAction.visible ? 2 : 1
               readonly property real actionWidth: (width - spacing * (visibleCount - 1)) / visibleCount
@@ -570,6 +579,7 @@ Panel {
                 selected: true
                 bordered: true
                 focusable: true
+                verticalPadding: Style.space(10)
                 Accessible.role: Accessible.Button
                 Accessible.name: text
                 Accessible.description: "Start the break rhythm"
@@ -587,6 +597,7 @@ Panel {
                 selected: true
                 bordered: true
                 focusable: true
+                verticalPadding: Style.space(10)
                 Accessible.role: Accessible.Button
                 Accessible.name: text
                 Accessible.description: "Pause active-use timing"
@@ -604,6 +615,7 @@ Panel {
                 selected: true
                 bordered: true
                 focusable: true
+                verticalPadding: Style.space(10)
                 Accessible.role: Accessible.Button
                 Accessible.name: text
                 Accessible.description: "Resume active-use timing"
@@ -621,6 +633,7 @@ Panel {
                 selected: true
                 bordered: true
                 focusable: true
+                verticalPadding: Style.space(10)
                 Accessible.role: Accessible.Button
                 Accessible.name: text
                 Accessible.description: "Complete the current break"
@@ -638,6 +651,7 @@ Panel {
                 fontFamily: root.contentFontFamily
                 bordered: true
                 focusable: true
+                verticalPadding: Style.space(10)
                 Accessible.role: Accessible.Button
                 Accessible.name: text
                 Accessible.description: "Begin the pending break now"
@@ -648,7 +662,8 @@ Panel {
 
             Row {
               visible: root.state.phase === "warning" || root.state.phase === "deferred"
-              width: parent.width
+              width: Math.min(parent.width, Style.space(340))
+              anchors.horizontalCenter: parent.horizontalCenter
               spacing: Style.space(8)
 
               Button {
@@ -660,6 +675,7 @@ Panel {
                 fontFamily: root.contentFontFamily
                 bordered: true
                 focusable: true
+                verticalPadding: Style.space(9)
                 Accessible.role: Accessible.Button
                 Accessible.name: text
                 Accessible.description: "Postpone the pending break once"
@@ -675,6 +691,7 @@ Panel {
                 fontFamily: root.contentFontFamily
                 bordered: true
                 focusable: true
+                verticalPadding: Style.space(9)
                 Accessible.role: Accessible.Button
                 Accessible.name: text
                 Accessible.description: "Skip the pending break and advance the cadence"
@@ -698,8 +715,6 @@ Panel {
               onClicked: if (root.service) root.service.clearReminderHold()
             }
 
-            PanelSeparator { foreground: root.contentForeground }
-
             Text {
               width: parent.width
               text: root.smartTimingSummary()
@@ -710,6 +725,8 @@ Panel {
               Accessible.role: Accessible.StaticText
               Accessible.name: text
             }
+
+            PanelSeparator { foreground: root.contentForeground }
 
             SettingsRow {
               width: parent.width
