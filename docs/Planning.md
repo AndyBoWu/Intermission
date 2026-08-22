@@ -276,6 +276,9 @@ Seconds must not be written continuously. Store only meaningful transitions
 and timestamps, then derive the current countdown. Corrupt, future, or expired
 snapshots must fail closed to `stopped` without opening an overlay.
 
+The versioned schemas, validation rules, recovery behavior, and ownership
+boundaries are defined in [Runtime and IPC Contracts](Contracts.md).
+
 ### IPC contract
 
 The first stable contract should cover:
@@ -345,7 +348,7 @@ Tracking Epic: [#14 — Build Intermission](https://github.com/AndyBoWu/Intermis
 Goal: prove the plugin contract and make every later change testable.
 
 - [x] [#1 — Scaffold Intermission as a Quattro root plugin](https://github.com/AndyBoWu/Intermission/issues/1)
-- [ ] [#2 — Define config, runtime snapshot, and IPC contracts](https://github.com/AndyBoWu/Intermission/issues/2)
+- [x] [#2 — Define config, runtime snapshot, and IPC contracts](https://github.com/AndyBoWu/Intermission/issues/2)
 - [ ] [#3 — Establish test and visual verification harness](https://github.com/AndyBoWu/Intermission/issues/3)
 
 Exit criteria: the empty vertical slice is discoverable, validates, exposes

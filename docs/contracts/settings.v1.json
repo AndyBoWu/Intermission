@@ -1,0 +1,14 @@
+{
+  "id": "io.github.andybowu.intermission",
+  "configVersion": 1,
+  "autoStart": true,
+  "workIntervalSeconds": 1200,
+  "shortBreakSeconds": 20,
+  "longBreakSeconds": 180,
+  "cyclesBeforeLong": 4,
+  "warningSeconds": 30,
+  "snoozeSeconds": 300,
+  "naturalBreakSeconds": 120,
+  "escapeHoldSeconds": 3,
+  "reducedMotion": false
+}

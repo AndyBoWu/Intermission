@@ -7,6 +7,7 @@ turns into eye strain or physical fatigue. It counts active use rather than
 wall-clock time, recognizes natural breaks, and can cover every display with a
 short, accessible pause when a reminder alone is not enough.
 
-The project is currently in planning. See the
-[Planning Document](docs/Planning.md) for product scope, architecture,
-milestones, and delivery tickets.
+## Documentation
+
+- [Planning Document](docs/Planning.md) — product scope, milestones, and tickets
+- [Runtime and IPC Contracts](docs/Contracts.md) — settings, state, recovery, and commands
