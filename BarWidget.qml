@@ -20,8 +20,15 @@ BarWidget {
         paused: false,
         breakDebtSeconds: 0,
         contextDeferred: false,
-        manualHoldRemainingSeconds: 0
+        manualHoldRemainingSeconds: 0,
+        outsideHours: false,
+        outsideResumePhase: null,
+        workdayOverrideActive: false,
+        endOfDayPromptPending: false
       })
+  readonly property bool breakWaiting: state.contextDeferred ||
+    (state.phase === "outside" &&
+      ["warning", "deferred"].indexOf(state.outsideResumePhase) !== -1)
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item
     ? panelLoader.item.popoutSwitchClosing === true : false
@@ -34,6 +41,10 @@ BarWidget {
     if (phase === "deferred") return "Deferred"
     if (phase === "break") return state.breakKind === "long" ? "Long break" : "Break"
     if (phase === "paused") return "Paused"
+    if (phase === "outside") return state.endOfDayPromptPending
+      ? "Workday ended"
+      : ["warning", "deferred"].indexOf(state.outsideResumePhase) !== -1
+      ? "Break waiting" : "Outside hours"
     return "Stopped"
   }
 
@@ -43,6 +54,7 @@ BarWidget {
     if (phase === "warning") return "󰀪"
     if (phase === "deferred") return "󰏥"
     if (phase === "break" || phase === "paused") return "󰏤"
+    if (phase === "outside") return "󰖔"
     return "󰐊"
   }
 
@@ -116,23 +128,24 @@ BarWidget {
     bar: root.bar
     text: root.vertical
       ? root.phaseIcon(root.state.phase) + "\n" +
-        (root.state.contextDeferred
+        (root.breakWaiting
           ? "waiting"
           : root.state.breakDebtSeconds > 0
           ? "owed " + root.formatRemaining(root.state.breakDebtSeconds, true)
           : root.formatRemaining(root.state.remainingSeconds, true))
       : root.phaseIcon(root.state.phase) + "  " + root.phaseLabel(root.state.phase) +
-        (root.state.phase === "stopped" || root.state.contextDeferred
+        (root.state.phase === "stopped" || root.breakWaiting
           ? "" : " · " + root.formatRemaining(root.state.remainingSeconds, false)) +
         (root.state.breakDebtSeconds > 0
           ? " · owed " + root.formatRemaining(root.state.breakDebtSeconds, false) : "")
     fixedHeight: root.vertical ? Style.bar.iconSlot * 2 : -1
     tooltipText: "Intermission — " + root.phaseLabel(root.state.phase) +
-      (root.state.phase === "stopped" || root.state.contextDeferred
+      (root.state.phase === "stopped" || root.breakWaiting
         ? "" : " — " + root.formatRemaining(root.state.remainingSeconds, false)) +
       (root.state.breakDebtSeconds > 0
         ? " — owed rest " + root.formatRemaining(root.state.breakDebtSeconds, false) : "")
     active: root.state.phase === "warning" || root.state.phase === "break" ||
+      root.breakWaiting || root.state.endOfDayPromptPending ||
       root.state.breakDebtSeconds > 0 || root.opened
     enabled: root.intermissionService && root.intermissionService.ready
     activeFocusOnTab: enabled

@@ -61,9 +61,55 @@ function routineIndex(cycleIndex) {
   return Number.isInteger(value) && value >= 0 ? value % ROUTINES.length : 0
 }
 
-function presentation(kind, cycleIndex) {
+function customRoutineMap(configuration) {
+  var source = configuration && typeof configuration === "object" ? configuration : {}
+  var values = Array.isArray(source.customBreakItems) ? source.customBreakItems : []
+  var result = {}
+  for (var i = 0; i < values.length && i < 8; i++) {
+    var item = values[i] && typeof values[i] === "object" ? values[i] : {}
+    var id = String(item.id || "").trim().toLowerCase()
+    var label = String(item.label || "").replace(/\s+/g, " ").trim()
+    var instruction = String(item.instruction || "").replace(/\s+/g, " ").trim()
+    if (/^custom-[a-z0-9-]{1,40}$/.test(id) && label.length > 0 && label.length <= 32 &&
+        instruction.length > 0 && instruction.length <= 80 && !result[id]) {
+      result[id] = { key: id, title: label, instruction: instruction }
+    }
+  }
+  return result
+}
+
+function routineSequence(configuration) {
+  var source = configuration && typeof configuration === "object" ? configuration : {}
+  var values = Array.isArray(source.routineOrder) ? source.routineOrder : []
+  var custom = customRoutineMap(source)
+  var result = []
+  for (var i = 0; i < values.length; i++) {
+    var key = String(values[i] || "").trim().toLowerCase()
+    var builtin = null
+    for (var r = 0; r < ROUTINES.length; r++) if (ROUTINES[r].key === key) builtin = ROUTINES[r]
+    if ((builtin || custom[key]) && result.indexOf(key) === -1) result.push(key)
+  }
+  if (result.length === 0) for (var d = 0; d < ROUTINES.length; d++) result.push(ROUTINES[d].key)
+  return { keys: result, custom: custom }
+}
+
+function presentation(kind, cycleIndex, configuration) {
   var breakKind = kindOf(kind)
-  var routine = ROUTINES[routineIndex(cycleIndex)]
+  var sequence = routineSequence(configuration)
+  var value = Number(cycleIndex)
+  var index = Number.isInteger(value) && value >= 0 ? value % sequence.keys.length : 0
+  var key = sequence.keys[index]
+  var custom = sequence.custom[key]
+  if (custom) {
+    return {
+      key: custom.key,
+      eyebrow: breakKind === "long" ? "Long intermission" : "Short intermission",
+      title: custom.title,
+      instruction: custom.instruction
+    }
+  }
+  var routine = ROUTINES[0]
+  for (var i = 0; i < ROUTINES.length; i++) if (ROUTINES[i].key === key) routine = ROUTINES[i]
   var copy = routine[breakKind]
   return {
     key: routine.key,
@@ -90,6 +136,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     FALLBACK_SETTINGS: FALLBACK_SETTINGS,
     ROUTINES: ROUTINES,
+    routineSequence: routineSequence,
     kindOf: kindOf,
     formatRemaining: formatRemaining,
     totalSeconds: totalSeconds,

@@ -80,6 +80,75 @@ test("busy-app allowlists keep only bounded exact app ids", () => {
     "firefox, org.gnome.evince, com.example.slides");
 });
 
+test("break rotation validates custom items, ordering, and safe fallback", () => {
+  const normalized = Settings.normalize({
+    configVersion: 1,
+    customBreakItems: [
+      { id: "custom-breathe", label: "  Breathe  ", instruction: "Slow   down\nand breathe." },
+      { id: "custom-breathe", label: "Duplicate", instruction: "Ignored." },
+      { id: "bad/id", label: "Bad", instruction: "Ignored." },
+      { id: "custom-empty", label: "", instruction: "Ignored." }
+    ],
+    routineOrder: ["hydrate", "custom-breathe", "hydrate", "unknown"]
+  });
+
+  assertDeepEqual(normalized.customBreakItems, [{
+    id: "custom-breathe",
+    label: "Breathe",
+    instruction: "Slow down and breathe."
+  }]);
+  assertDeepEqual(normalized.routineOrder, ["hydrate", "custom-breathe"]);
+
+  const fallback = Settings.normalize({ configVersion: 1, routineOrder: [] });
+  assertDeepEqual(fallback.routineOrder, ["eyes", "stand", "stretch", "hydrate"]);
+});
+
+test("weekly reminder windows validate ordinary, disabled, and overnight hours", () => {
+  const normalized = Settings.normalize({
+    configVersion: 1,
+    workdayHoursEnabled: true,
+    endOfDayPromptEnabled: true,
+    workdayHoursByDay: {
+      sun: "off",
+      mon: "09:00-17:00",
+      tue: "22:00-06:00",
+      wed: "invalid"
+    }
+  });
+
+  assertEqual(normalized.workdayHoursEnabled, true);
+  assertEqual(normalized.endOfDayPromptEnabled, true);
+  assertEqual(normalized.workdayHoursByDay.sun, "off");
+  assertEqual(normalized.workdayHoursByDay.mon, "09:00-17:00");
+  assertEqual(normalized.workdayHoursByDay.tue, "22:00-06:00");
+  assertEqual(normalized.workdayHoursByDay.wed, "off");
+
+  assertEqual(Settings.reminderAllowedAt(normalized, { dayIndex: 1, minuteOfDay: 10 * 60 }), true);
+  assertEqual(Settings.reminderAllowedAt(normalized, { dayIndex: 1, minuteOfDay: 18 * 60 }), false);
+  assertEqual(Settings.reminderAllowedAt(normalized, { dayIndex: 2, minuteOfDay: 23 * 60 }), true);
+  assertEqual(Settings.reminderAllowedAt(normalized, { dayIndex: 3, minuteOfDay: 5 * 60 }), true);
+  assertEqual(Settings.reminderAllowedAt(normalized, { dayIndex: 3, minuteOfDay: 7 * 60 }), false);
+});
+
+test("reminder policy reevaluates supplied local time without storing a timezone", () => {
+  const options = Settings.normalize({
+    configVersion: 1,
+    workdayHoursEnabled: true,
+    workdayHoursByDay: { mon: "09:00-17:00" }
+  });
+
+  assertEqual(Settings.reminderAllowedAt(options, {
+    dayIndex: 1,
+    minuteOfDay: 16 * 60,
+    timezoneOffsetMinutes: 480
+  }), true);
+  assertEqual(Settings.reminderAllowedAt(options, {
+    dayIndex: 1,
+    minuteOfDay: 18 * 60,
+    timezoneOffsetMinutes: 300
+  }), false);
+});
+
 test("named cadence presets apply atomically and persist their identity", () => {
   const frequent = Settings.applyPreset({}, "frequent");
   assertEqual(frequent.presetId, "frequent");

@@ -74,6 +74,13 @@ remains a live acceptance check.
 | Manual hold | Start and end a 30-minute hold from the panel | Remaining hold time is visible; ending it releases a pending break without clearing debt | #11 |
 | Owed-rest cap | Repeatedly defer or skip beyond the longest configured break | One value remains capped; repeated observations of the same pending break never add twice | #11 |
 | Context privacy | Inspect config, snapshot, logs, and IPC status after all context scenarios | No window title, content, observed app history, or media/call data is stored | #11 |
+| Custom rotation | Reorder built-ins, exclude one, add a custom item, and complete enough accelerated cycles to wrap | Overlay follows the exact safe order and wraps without missing or duplicate items | #12 |
+| Invalid or empty rotation | Save unknown, duplicate, incomplete, and then empty rotation input | Invalid entries are removed and an empty result falls back to the four built-ins | #12 |
+| Daily boundary | Cross an enabled window end during active work, then its next start | Progress freezes and resumes without new owed rest or a stale overlay | #12 |
+| Overnight window | Configure `22:00-06:00` and observe both sides of midnight | The originating day's window remains allowed until 06:00 | #12 |
+| End-of-day choice | Enable the prompt and exercise wait, stop, and continue on separate local dates | Prompt is non-blocking and once per date; each reversible choice follows its documented scope | #12 |
+| Timezone change | Change the session timezone across an allowed boundary and restore it | Policy re-evaluates local time without retaining the old zone or advancing frozen time | #12 |
+| Outside-hours restart | Close during an outside-hours phase and restore after more than 12 hours | The frozen phase and progress survive without accruing active time or owed rest | #12 |
 | Short break | Start a short break with accelerated settings | Rotating instruction and countdown are correct; completion advances cadence | #7 / #9 |
 | Dual cadence | Apply a named preset, accelerate a short-to-long sequence, then reload | Each work target and break duration matches its type; the preset persists | #9 |
 | Long break | Complete the configured short-cycle count | Long routine and duration replace the short routine | #9 |

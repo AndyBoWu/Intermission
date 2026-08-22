@@ -178,6 +178,7 @@ completed break. Returning should never trigger an already-satisfied break.
 | `deferred` | A pending break has a new deadline | Start now, pause |
 | `break` | Full-screen break is active | Complete, emergency exit |
 | `paused` | User intentionally paused the rhythm | Resume, stop |
+| `outside` | Automatic timing is frozen outside allowed hours | Wait, stop for today, continue this cycle, take a break now |
 
 State transitions and timestamps belong in a pure JavaScript model so they
 can be tested without a compositor.
@@ -389,7 +390,7 @@ Goal: improve timing and long-term usefulness without expanding into a task or
 surveillance product.
 
 - [x] [#11 — Add context-aware deferral and break debt](https://github.com/AndyBoWu/Intermission/issues/11)
-- [ ] [#12 — Add custom break rotation and workday policy](https://github.com/AndyBoWu/Intermission/issues/12)
+- [x] [#12 — Add custom break rotation and workday policy](https://github.com/AndyBoWu/Intermission/issues/12)
 - [ ] [#13 — Add private local history and humane adherence insights](https://github.com/AndyBoWu/Intermission/issues/13)
 
 Exit criteria: interruptions adapt to supported local context, postponed

@@ -1,4 +1,4 @@
-var PHASES = ["stopped", "active", "idle", "warning", "deferred", "break", "paused"]
+var PHASES = ["stopped", "active", "idle", "warning", "deferred", "break", "paused", "outside"]
 var BREAK_KINDS = ["short", "long"]
 
 var DEFAULT_SETTINGS = {
@@ -101,7 +101,11 @@ function createState(now, rawSettings) {
     breakDebtMs: 0,
     pendingDebtRecorded: false,
     contextDeferred: false,
-    manualHoldUntilEpochMs: null
+    manualHoldUntilEpochMs: null,
+    workdayOverrideActive: false,
+    endOfDayPromptPending: false,
+    lastEndOfDayPromptDateKey: null,
+    resetAtNextWorkday: false
   }
 }
 
@@ -170,6 +174,9 @@ function publicState(state, now, rawSettings) {
       remaining = Math.max(0, settings.warningSeconds * 1000 - (state.phaseEnteredAtEpochMs - state.warningStartedAtEpochMs))
     else if (state.resumePhase === "deferred")
       remaining = Math.max(0, state.deferredUntilEpochMs - state.phaseEnteredAtEpochMs)
+  } else if (state.phase === "outside") {
+    if (state.resumePhase === "active" || state.resumePhase === "idle")
+      remaining = Math.max(0, state.workTargetMs - state.activeElapsedMs)
   }
 
   return {
@@ -181,7 +188,11 @@ function publicState(state, now, rawSettings) {
     breakDebtSeconds: Math.ceil(boundedDebtMs(state.breakDebtMs, settings) / 1000),
     contextDeferred: state.contextDeferred === true,
     manualHoldRemainingSeconds: Math.ceil(Math.max(0,
-      (state.manualHoldUntilEpochMs || timestamp) - timestamp) / 1000)
+      (state.manualHoldUntilEpochMs || timestamp) - timestamp) / 1000),
+    outsideHours: state.phase === "outside",
+    outsideResumePhase: state.phase === "outside" ? state.resumePhase : null,
+    workdayOverrideActive: state.workdayOverrideActive === true,
+    endOfDayPromptPending: state.endOfDayPromptPending === true
   }
 }
 
@@ -203,7 +214,10 @@ function freshActive(state, now, settings, cycleIndex, effects, nextDebtMs) {
       settings
     ),
     pendingDebtRecorded: false,
-    contextDeferred: false
+    contextDeferred: false,
+    workdayOverrideActive: false,
+    endOfDayPromptPending: false,
+    resetAtNextWorkday: false
   })
   return success(next, true, effects)
 }
@@ -233,7 +247,10 @@ function freshIdle(state, now, settings, effects, actualDurationMs) {
     resumePhase: null,
     breakDebtMs: boundedDebtMs((state.breakDebtMs || 0) - actualDurationMs, settings),
     pendingDebtRecorded: false,
-    contextDeferred: false
+    contextDeferred: false,
+    workdayOverrideActive: false,
+    endOfDayPromptPending: false,
+    resetAtNextWorkday: false
   })
   var allEffects = effects ? effects.slice() : []
   allEffects.push(effect)
@@ -271,7 +288,7 @@ function beginBreak(state, now, settings, requestedKind) {
   if (BREAK_KINDS.indexOf(kind) === -1)
     return failure(state, "INVALID_ARGUMENT", "Break kind must be short or long")
 
-  if (["active", "warning", "deferred"].indexOf(state.phase) === -1)
+  if (["active", "warning", "deferred", "outside"].indexOf(state.phase) === -1)
     return failure(state, "INVALID_STATE", "A break cannot start from " + state.phase)
 
   var elapsed = state.phase === "active" ? activeElapsedMs(state, now) : state.activeElapsedMs
@@ -285,7 +302,9 @@ function beginBreak(state, now, settings, requestedKind) {
     breakStartedAtEpochMs: now,
     breakDurationMs: duration,
     resumePhase: null,
-    contextDeferred: false
+    contextDeferred: false,
+    endOfDayPromptPending: false,
+    resetAtNextWorkday: false
   })
   return success(next, true, [{
     type: "break-started",
@@ -327,6 +346,99 @@ function resumeAfterContext(state, now, settings) {
     atEpochMs: now,
     breakKind: state.breakKind,
     warningSeconds: recoveryMs / 1000
+  }])
+}
+
+function closeWorkday(state, now, event) {
+  if (state.phase === "outside") return success(state, false)
+  if (["active", "idle", "warning", "deferred"].indexOf(state.phase) === -1)
+    return success(state, false)
+  var dateKey = typeof event.dateKey === "string" && /^\d{4}-\d{2}-\d{2}$/.test(event.dateKey)
+    ? event.dateKey : null
+  var shouldPrompt = event.prompt === true && dateKey !== null &&
+    state.lastEndOfDayPromptDateKey !== dateKey
+  var elapsed = state.phase === "active" ? activeElapsedMs(state, now) : state.activeElapsedMs
+  var next = changedState(state, now, "outside", {
+    activeElapsedMs: elapsed,
+    activeStartedAtEpochMs: null,
+    resumePhase: state.phase,
+    workdayOverrideActive: false,
+    endOfDayPromptPending: shouldPrompt,
+    lastEndOfDayPromptDateKey: shouldPrompt ? dateKey : state.lastEndOfDayPromptDateKey,
+    resetAtNextWorkday: false
+  })
+  var effects = [{ type: "workday-closed", atEpochMs: now, resumePhase: state.phase }]
+  if (shouldPrompt) effects.push({ type: "end-of-day-prompt", atEpochMs: now, dateKey: dateKey })
+  return success(next, true, effects)
+}
+
+function openWorkday(state, now, settings, idle, override) {
+  if (state.phase !== "outside") return success(state, false)
+  if (state.resetAtNextWorkday === true) {
+    var resetKind = breakKindForCycle(state.cycleIndex, settings)
+    var resetPhase = idle === true ? "idle" : "active"
+    var reset = changedState(state, now, resetPhase, {
+      activeElapsedMs: 0,
+      activeStartedAtEpochMs: resetPhase === "active" ? now : null,
+      workTargetMs: workTargetMs(resetKind, settings),
+      breakKind: resetKind,
+      warningStartedAtEpochMs: null,
+      deferredUntilEpochMs: null,
+      breakStartedAtEpochMs: null,
+      breakDurationMs: breakDurationMs(resetKind, settings),
+      resumePhase: null,
+      pendingDebtRecorded: false,
+      contextDeferred: false,
+      workdayOverrideActive: override === true,
+      endOfDayPromptPending: false,
+      resetAtNextWorkday: false
+    })
+    return success(reset, true, [{
+      type: "workday-opened",
+      atEpochMs: now,
+      reset: true
+    }])
+  }
+
+  var resume = state.resumePhase || "active"
+  if (idle === true && (resume === "warning" || resume === "deferred")) {
+    if (state.endOfDayPromptPending !== true) return success(state, false)
+    return success(changedState(state, now, "outside", {
+      endOfDayPromptPending: false
+    }), true, [{ type: "workday-waiting-for-activity", atEpochMs: now }])
+  }
+  var nextPhase = resume === "active" || resume === "idle"
+    ? (idle === true ? "idle" : "active") : resume
+  var patch = {
+    resumePhase: null,
+    workdayOverrideActive: override === true,
+    endOfDayPromptPending: false,
+    resetAtNextWorkday: false
+  }
+  if (nextPhase === "active") patch.activeStartedAtEpochMs = now
+  else patch.activeStartedAtEpochMs = null
+
+  if (resume === "warning" || resume === "deferred") {
+    var warningMs = settings.warningSeconds * 1000
+    var recoveryMs = Math.min(warningMs, 10000)
+    patch.warningStartedAtEpochMs = now - (warningMs - recoveryMs)
+    patch.deferredUntilEpochMs = null
+    patch.contextDeferred = false
+    if (recoveryMs === 0) {
+      var immediate = beginBreak(state, now, settings)
+      immediate.state.workdayOverrideActive = override === true
+      return immediate
+    } else {
+      nextPhase = "warning"
+    }
+  }
+
+  var next = changedState(state, now, nextPhase, patch)
+  return success(next, true, [{
+    type: "workday-opened",
+    atEpochMs: now,
+    resumePhase: resume,
+    override: override === true
   }])
 }
 
@@ -406,6 +518,40 @@ function transition(inputState, event, now, rawSettings) {
     return success(changedState(state, now, state.phase, {
       manualHoldUntilEpochMs: null
     }), true, [{ type: "context-hold-cleared", atEpochMs: now }])
+  }
+
+  if (type === "closeWorkday") return closeWorkday(state, now, event)
+
+  if (type === "openWorkday")
+    return openWorkday(state, now, settings, event.idle === true, false)
+
+  if (type === "continueWorkday")
+    return openWorkday(state, now, settings, event.idle === true, true)
+
+  if (type === "dismissEndOfDay") {
+    if (state.phase !== "outside" || state.endOfDayPromptPending !== true)
+      return success(state, false)
+    return success(changedState(state, now, "outside", {
+      endOfDayPromptPending: false
+    }), true, [{ type: "end-of-day-dismissed", atEpochMs: now }])
+  }
+
+  if (type === "stopForDay") {
+    if (state.phase !== "outside")
+      return failure(state, "INVALID_STATE", "Stop for today requires outside-hours state")
+    return success(changedState(state, now, "outside", {
+      activeElapsedMs: 0,
+      activeStartedAtEpochMs: null,
+      warningStartedAtEpochMs: null,
+      deferredUntilEpochMs: null,
+      breakStartedAtEpochMs: null,
+      resumePhase: "active",
+      pendingDebtRecorded: false,
+      contextDeferred: false,
+      workdayOverrideActive: false,
+      endOfDayPromptPending: false,
+      resetAtNextWorkday: true
+    }), true, [{ type: "workday-stopped", atEpochMs: now }])
   }
 
   if (type === "enterIdle") {
@@ -494,6 +640,7 @@ function transition(inputState, event, now, rawSettings) {
   }
 
   if (type === "tick") {
+    if (state.phase === "outside") return success(state, false)
     if (state.phase === "active") {
       var elapsed = activeElapsedMs(state, now)
       if (elapsed >= state.workTargetMs) {
@@ -579,6 +726,10 @@ function stateWithAdditiveDefaults(inputState) {
   if (state.pendingDebtRecorded === undefined) state.pendingDebtRecorded = false
   if (state.contextDeferred === undefined) state.contextDeferred = false
   if (state.manualHoldUntilEpochMs === undefined) state.manualHoldUntilEpochMs = null
+  if (state.workdayOverrideActive === undefined) state.workdayOverrideActive = false
+  if (state.endOfDayPromptPending === undefined) state.endOfDayPromptPending = false
+  if (state.lastEndOfDayPromptDateKey === undefined) state.lastEndOfDayPromptDateKey = null
+  if (state.resetAtNextWorkday === undefined) state.resetAtNextWorkday = false
   return state
 }
 
@@ -601,6 +752,15 @@ function validSnapshot(snapshot) {
   if (snapshot.contextDeferred && !snapshot.pendingDebtRecorded) return false
   if (snapshot.manualHoldUntilEpochMs !== null &&
       (!Number.isInteger(snapshot.manualHoldUntilEpochMs) || snapshot.manualHoldUntilEpochMs < 0)) return false
+  if (typeof snapshot.workdayOverrideActive !== "boolean") return false
+  if (typeof snapshot.endOfDayPromptPending !== "boolean") return false
+  if (snapshot.lastEndOfDayPromptDateKey !== null &&
+      (typeof snapshot.lastEndOfDayPromptDateKey !== "string" ||
+       !/^\d{4}-\d{2}-\d{2}$/.test(snapshot.lastEndOfDayPromptDateKey))) return false
+  if (typeof snapshot.resetAtNextWorkday !== "boolean") return false
+  if (snapshot.endOfDayPromptPending && snapshot.phase !== "outside") return false
+  if (snapshot.resetAtNextWorkday && snapshot.phase !== "outside") return false
+  if (snapshot.workdayOverrideActive && snapshot.phase === "outside") return false
   if (snapshot.activeStartedAtEpochMs !== null &&
       (!Number.isInteger(snapshot.activeStartedAtEpochMs) || snapshot.activeStartedAtEpochMs < 0 ||
        snapshot.activeStartedAtEpochMs > snapshot.savedAtEpochMs)) return false
@@ -621,7 +781,9 @@ function validSnapshot(snapshot) {
       snapshot.breakStartedAtEpochMs === null && snapshot.breakDurationMs === 0 &&
       snapshot.resumePhase === null && snapshot.breakDebtMs === 0 &&
       snapshot.pendingDebtRecorded === false && snapshot.contextDeferred === false &&
-      snapshot.manualHoldUntilEpochMs === null
+      snapshot.manualHoldUntilEpochMs === null && snapshot.workdayOverrideActive === false &&
+      snapshot.endOfDayPromptPending === false && snapshot.lastEndOfDayPromptDateKey === null &&
+      snapshot.resetAtNextWorkday === false
   }
 
   if (BREAK_KINDS.indexOf(snapshot.breakKind) === -1 || snapshot.breakDurationMs <= 0) return false
@@ -653,6 +815,14 @@ function validSnapshot(snapshot) {
         snapshot.warningStartedAtEpochMs === null) &&
       (snapshot.resumePhase === "deferred" ? Number.isInteger(snapshot.deferredUntilEpochMs) :
         snapshot.deferredUntilEpochMs === null)
+  if (snapshot.phase === "outside")
+    return snapshot.activeStartedAtEpochMs === null && snapshot.breakStartedAtEpochMs === null &&
+      ["active", "idle", "warning", "deferred"].indexOf(snapshot.resumePhase) !== -1 &&
+      (snapshot.resumePhase === "warning" ? Number.isInteger(snapshot.warningStartedAtEpochMs) :
+        snapshot.warningStartedAtEpochMs === null) &&
+      (snapshot.resumePhase === "deferred" ? Number.isInteger(snapshot.deferredUntilEpochMs) :
+        snapshot.deferredUntilEpochMs === null) &&
+      (snapshot.contextDeferred === false || snapshot.resumePhase === "warning")
   return false
 }
 
@@ -675,13 +845,15 @@ function restoreState(snapshot, now, rawSettings) {
     return recoveryFailure(now, settings, "INVALID_SNAPSHOT", "Snapshot shape is invalid")
   if (normalizedSnapshot.savedAtEpochMs > now + 300000)
     return recoveryFailure(now, settings, "FUTURE_SNAPSHOT", "Snapshot is from the future")
-  if (now - normalizedSnapshot.savedAtEpochMs > 43200000)
+  if (normalizedSnapshot.phase !== "outside" &&
+      now - normalizedSnapshot.savedAtEpochMs > 43200000)
     return recoveryFailure(now, settings, "STALE_SNAPSHOT", "Snapshot is older than 12 hours")
 
   var state = clone(normalizedSnapshot)
   var downtime = Math.max(0, now - state.savedAtEpochMs)
 
-  if (state.phase === "paused" || state.phase === "stopped") return success(state, false)
+  if (state.phase === "paused" || state.phase === "stopped" || state.phase === "outside")
+    return success(state, false)
 
   if (state.phase === "break") {
     if (!isFiniteNumber(state.breakStartedAtEpochMs))
@@ -904,11 +1076,33 @@ function heartbeat(inputState, inputContext, now, rawSettings, rawOptions) {
   var suspensionThresholdMs = integerSetting(options.suspensionThresholdMs, 5000,
     expectedIntervalMs + 1, 300000)
   var tickEvent = { type: "tick", busyContext: options.busyContext === true }
+  var remindersAllowed = options.remindersAllowed !== false
+  var closeEvent = {
+    type: "closeWorkday",
+    prompt: options.endOfDayPrompt === true,
+    dateKey: options.localDateKey
+  }
   var previousObserved = inputContext.lastObservedAtEpochMs
   var prepared = prepareActivityObservation(inputState, inputContext, now)
   if (!prepared.ok) return prepared
 
   if (now < previousObserved) return prepared
+
+  if (!remindersAllowed && prepared.state.workdayOverrideActive !== true &&
+      ["active", "idle", "warning", "deferred"].indexOf(prepared.state.phase) !== -1) {
+    appendTransition(prepared, transition(prepared.state, closeEvent, now, settings))
+    prepared.context.lastObservedAtEpochMs = now
+    return prepared
+  }
+
+  if (remindersAllowed && prepared.state.phase === "outside") {
+    appendTransition(prepared, transition(prepared.state, {
+      type: "openWorkday",
+      idle: prepared.context.isIdle === true
+    }, now, settings))
+    prepared.context.lastObservedAtEpochMs = now
+    return prepared
+  }
 
   var gap = now - previousObserved
   if (!prepared.context.isIdle && gap >= suspensionThresholdMs) {
@@ -933,6 +1127,10 @@ function heartbeat(inputState, inputContext, now, rawSettings, rawOptions) {
   } else {
     appendTransition(prepared, transition(prepared.state, tickEvent, now, settings))
   }
+
+  if (!remindersAllowed && prepared.state.workdayOverrideActive !== true &&
+      ["active", "idle", "warning", "deferred"].indexOf(prepared.state.phase) !== -1)
+    appendTransition(prepared, transition(prepared.state, closeEvent, now, settings))
 
   prepared.context.lastObservedAtEpochMs = now
   return prepared

@@ -1,4 +1,15 @@
 var PLUGIN_ID = "io.github.andybowu.intermission"
+var BUILTIN_ROUTINE_IDS = ["eyes", "stand", "stretch", "hydrate"]
+var DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+var DEFAULT_WORKDAY_HOURS = {
+  sun: "off",
+  mon: "09:00-17:00",
+  tue: "09:00-17:00",
+  wed: "09:00-17:00",
+  thu: "09:00-17:00",
+  fri: "09:00-17:00",
+  sat: "off"
+}
 
 var DEFAULTS = {
   configVersion: 1,
@@ -16,7 +27,12 @@ var DEFAULTS = {
   escapeHoldSeconds: 3,
   reducedMotion: false,
   contextDeferralEnabled: true,
-  busyAppIds: ""
+  busyAppIds: "",
+  routineOrder: BUILTIN_ROUTINE_IDS,
+  customBreakItems: [],
+  workdayHoursEnabled: false,
+  endOfDayPromptEnabled: false,
+  workdayHoursByDay: DEFAULT_WORKDAY_HOURS
 }
 
 var INTEGER_FIELDS = {
@@ -104,6 +120,115 @@ function addAppId(rawAllowlist, appId) {
   return appIdText(values)
 }
 
+function conciseText(value, maximum) {
+  var text = String(value || "").replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/\s+/g, " ").trim()
+  return text !== "" && text.length <= maximum ? text : ""
+}
+
+function normalizeCustomBreakItems(raw) {
+  var values = Array.isArray(raw) ? raw : []
+  var result = []
+  var seen = {}
+  for (var i = 0; i < values.length && result.length < 8; i++) {
+    if (!isObject(values[i])) continue
+    var id = String(values[i].id || "").trim().toLowerCase()
+    var label = conciseText(values[i].label, 32)
+    var instruction = conciseText(values[i].instruction, 80)
+    if (!/^custom-[a-z0-9-]{1,40}$/.test(id) || seen[id] || label === "" || instruction === "")
+      continue
+    seen[id] = true
+    result.push({ id: id, label: label, instruction: instruction })
+  }
+  return result
+}
+
+function normalizeRoutineOrder(raw, customItems) {
+  var values = Array.isArray(raw) ? raw : String(raw || "").split(/[\s,]+/)
+  var allowed = BUILTIN_ROUTINE_IDS.slice()
+  var custom = normalizeCustomBreakItems(customItems)
+  for (var c = 0; c < custom.length; c++) allowed.push(custom[c].id)
+  var result = []
+  for (var i = 0; i < values.length; i++) {
+    var key = String(values[i] || "").trim().toLowerCase()
+    if (allowed.indexOf(key) !== -1 && result.indexOf(key) === -1) result.push(key)
+  }
+  return result.length > 0 ? result : BUILTIN_ROUTINE_IDS.slice()
+}
+
+function nextCustomRoutineId(raw) {
+  var items = normalizeCustomBreakItems(raw)
+  var used = {}
+  for (var i = 0; i < items.length; i++) used[items[i].id] = true
+  var index = 1
+  while (used["custom-" + index]) index++
+  return "custom-" + index
+}
+
+function parseReminderWindow(raw) {
+  var text = String(raw || "").trim().toLowerCase()
+  if (text === "off") return { valid: true, enabled: false, text: "off" }
+  var match = /^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/.exec(text)
+  if (!match) return { valid: false, enabled: false, text: "" }
+  var startHour = Number(match[1])
+  var startMinute = Number(match[2])
+  var endHour = Number(match[3])
+  var endMinute = Number(match[4])
+  if (startHour > 23 || startMinute > 59 || endHour > 24 || endMinute > 59 ||
+      (endHour === 24 && endMinute !== 0))
+    return { valid: false, enabled: false, text: "" }
+  var start = startHour * 60 + startMinute
+  var end = endHour * 60 + endMinute
+  if (start === end) return { valid: false, enabled: false, text: "" }
+  return { valid: true, enabled: true, startMinute: start, endMinute: end, text: text }
+}
+
+function normalizeWorkdayHours(raw) {
+  var source = isObject(raw) ? raw : {}
+  var result = {}
+  for (var i = 0; i < DAY_KEYS.length; i++) {
+    var key = DAY_KEYS[i]
+    if (source[key] === undefined) {
+      result[key] = DEFAULT_WORKDAY_HOURS[key]
+      continue
+    }
+    var parsed = parseReminderWindow(source[key])
+    result[key] = parsed.valid ? parsed.text : "off"
+  }
+  return result
+}
+
+function reminderAllowedAt(rawSettings, localParts) {
+  var settings = normalize(rawSettings)
+  if (!settings.workdayHoursEnabled) return true
+  var parts = isObject(localParts) ? localParts : {}
+  var dayIndex = Number.isInteger(parts.dayIndex) ? parts.dayIndex : -1
+  var minute = Number.isInteger(parts.minuteOfDay) ? parts.minuteOfDay : -1
+  if (dayIndex < 0 || dayIndex > 6 || minute < 0 || minute >= 1440) return false
+
+  var today = parseReminderWindow(settings.workdayHoursByDay[DAY_KEYS[dayIndex]])
+  if (today.enabled) {
+    if (today.startMinute < today.endMinute &&
+        minute >= today.startMinute && minute < today.endMinute) return true
+    if (today.startMinute > today.endMinute && minute >= today.startMinute) return true
+  }
+
+  var previousIndex = (dayIndex + 6) % 7
+  var previous = parseReminderWindow(settings.workdayHoursByDay[DAY_KEYS[previousIndex]])
+  return previous.enabled && previous.startMinute > previous.endMinute && minute < previous.endMinute
+}
+
+function localTimeParts(value) {
+  var date = value instanceof Date ? value : new Date(value === undefined ? Date.now() : value)
+  function pad(number) { return number < 10 ? "0" + number : String(number) }
+  return {
+    dayIndex: date.getDay(),
+    minuteOfDay: date.getHours() * 60 + date.getMinutes(),
+    dateKey: String(date.getFullYear()) + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()),
+    timezoneOffsetMinutes: date.getTimezoneOffset()
+  }
+}
+
 function matchingPreset(values) {
   for (var presetId in PRESETS) {
     var preset = PRESETS[presetId]
@@ -129,7 +254,14 @@ function normalize(raw) {
   if (typeof source.reducedMotion === "boolean") result.reducedMotion = source.reducedMotion
   if (typeof source.contextDeferralEnabled === "boolean")
     result.contextDeferralEnabled = source.contextDeferralEnabled
+  if (typeof source.workdayHoursEnabled === "boolean")
+    result.workdayHoursEnabled = source.workdayHoursEnabled
+  if (typeof source.endOfDayPromptEnabled === "boolean")
+    result.endOfDayPromptEnabled = source.endOfDayPromptEnabled
   result.busyAppIds = appIdText(source.busyAppIds)
+  result.customBreakItems = normalizeCustomBreakItems(source.customBreakItems)
+  result.routineOrder = normalizeRoutineOrder(source.routineOrder, result.customBreakItems)
+  result.workdayHoursByDay = normalizeWorkdayHours(source.workdayHoursByDay)
 
   for (var field in INTEGER_FIELDS) {
     if (field === "workIntervalSeconds" || field === "shortWorkIntervalSeconds" ||
@@ -204,6 +336,11 @@ function entryFromForm(existing, form, pluginId) {
   entry.reducedMotion = normalized.reducedMotion
   entry.contextDeferralEnabled = normalized.contextDeferralEnabled
   entry.busyAppIds = normalized.busyAppIds
+  entry.routineOrder = clone(normalized.routineOrder)
+  entry.customBreakItems = clone(normalized.customBreakItems)
+  entry.workdayHoursEnabled = normalized.workdayHoursEnabled
+  entry.endOfDayPromptEnabled = normalized.endOfDayPromptEnabled
+  entry.workdayHoursByDay = clone(normalized.workdayHoursByDay)
   return entry
 }
 
@@ -214,10 +351,19 @@ if (typeof module !== "undefined") {
     INTEGER_FIELDS: INTEGER_FIELDS,
     PRESETS: PRESETS,
     PRESET_FIELDS: PRESET_FIELDS,
+    BUILTIN_ROUTINE_IDS: BUILTIN_ROUTINE_IDS,
+    DAY_KEYS: DAY_KEYS,
     appIdList: appIdList,
     appIdText: appIdText,
     appIdAllowed: appIdAllowed,
     addAppId: addAppId,
+    normalizeCustomBreakItems: normalizeCustomBreakItems,
+    normalizeRoutineOrder: normalizeRoutineOrder,
+    nextCustomRoutineId: nextCustomRoutineId,
+    parseReminderWindow: parseReminderWindow,
+    normalizeWorkdayHours: normalizeWorkdayHours,
+    reminderAllowedAt: reminderAllowedAt,
+    localTimeParts: localTimeParts,
     normalize: normalize,
     matchingPreset: matchingPreset,
     applyPreset: applyPreset,

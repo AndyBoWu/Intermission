@@ -26,13 +26,30 @@ Panel {
         paused: false,
         breakDebtSeconds: 0,
         contextDeferred: false,
-        manualHoldRemainingSeconds: 0
+        manualHoldRemainingSeconds: 0,
+        outsideHours: false,
+        outsideResumePhase: null,
+        workdayOverrideActive: false,
+        endOfDayPromptPending: false
       })
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
+  readonly property var workdayRows: [
+    { key: "mon", label: "Monday" },
+    { key: "tue", label: "Tuesday" },
+    { key: "wed", label: "Wednesday" },
+    { key: "thu", label: "Thursday" },
+    { key: "fri", label: "Friday" },
+    { key: "sat", label: "Saturday" },
+    { key: "sun", label: "Sunday" }
+  ]
 
   function phaseLabel() {
     if (state.contextDeferred) return "Break waiting"
+    if (state.phase === "outside") return state.endOfDayPromptPending
+      ? "Workday ended"
+      : ["warning", "deferred"].indexOf(state.outsideResumePhase) !== -1
+      ? "Break waiting outside reminder hours" : "Outside reminder hours"
     if (state.phase === "active") return "Active"
     if (state.phase === "idle") return "Idle"
     if (state.phase === "warning") return "Break soon"
@@ -60,6 +77,70 @@ Panel {
       root.form.busyAppIds,
       root.service.currentAppId
     ))
+  }
+
+  function setFormValues(values) {
+    var next = {}
+    for (var key in root.form) next[key] = root.form[key]
+    for (var name in values) next[name] = values[name]
+    root.form = next
+    root.dirty = true
+    root.saveMessage = ""
+  }
+
+  function setRoutineOrder(value) {
+    root.setFormValue("routineOrder", Settings.normalizeRoutineOrder(
+      value,
+      root.form.customBreakItems
+    ))
+  }
+
+  function addCustomRoutine() {
+    var items = Array.isArray(root.form.customBreakItems)
+      ? root.form.customBreakItems.slice() : []
+    if (items.length >= 8) return
+    var id = Settings.nextCustomRoutineId(items)
+    items.push({
+      id: id,
+      label: "Custom break",
+      instruction: "Step away for one calm moment."
+    })
+    var order = Array.isArray(root.form.routineOrder) ? root.form.routineOrder.slice() : []
+    order.push(id)
+    root.setFormValues({ customBreakItems: items, routineOrder: order })
+  }
+
+  function updateCustomRoutine(index, field, value) {
+    var items = Array.isArray(root.form.customBreakItems)
+      ? root.form.customBreakItems.slice() : []
+    if (index < 0 || index >= items.length) return
+    var item = {}
+    for (var key in items[index]) item[key] = items[index][key]
+    item[field] = value
+    items[index] = item
+    root.setFormValue("customBreakItems", items)
+  }
+
+  function removeCustomRoutine(index) {
+    var items = Array.isArray(root.form.customBreakItems)
+      ? root.form.customBreakItems.slice() : []
+    if (index < 0 || index >= items.length) return
+    var removedId = items[index].id
+    items.splice(index, 1)
+    var order = Array.isArray(root.form.routineOrder) ? root.form.routineOrder.slice() : []
+    order = order.filter(function(key) { return key !== removedId })
+    root.setFormValues({
+      customBreakItems: items,
+      routineOrder: Settings.normalizeRoutineOrder(order, items)
+    })
+  }
+
+  function setWorkdayHours(dayKey, value) {
+    var current = root.form.workdayHoursByDay || ({})
+    var hours = {}
+    for (var key in current) hours[key] = current[key]
+    hours[dayKey] = value
+    root.setFormValue("workdayHoursByDay", hours)
   }
 
   function formatRemaining(seconds) {
@@ -123,6 +204,7 @@ Panel {
     root.settings = entry
     if (root.hostWidget && "settings" in root.hostWidget) root.hostWidget.settings = entry
     if (root.service) root.service.updateSettings(entry)
+    root.form = Settings.formFromSettings(entry)
     root.dirty = false
     root.saveMessage = "Saved"
     savedMessageTimer.restart()
@@ -233,7 +315,10 @@ Panel {
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
               text: root.state.phase === "stopped" ? "—"
-                : root.state.contextDeferred ? "waiting"
+                : root.state.contextDeferred ||
+                  (root.state.phase === "outside" &&
+                    ["warning", "deferred"].indexOf(root.state.outsideResumePhase) !== -1)
+                ? "waiting"
                 : root.formatRemaining(root.state.remainingSeconds)
               color: root.contentForeground
               font.family: root.contentFontFamily
@@ -296,8 +381,9 @@ Panel {
 
             Button {
               id: startBreakAction
-              visible: ["active", "warning", "deferred"].indexOf(root.state.phase) !== -1
-              text: root.state.phase === "active" ? "Take a break" : "Start now"
+              visible: ["active", "warning", "deferred", "outside"].indexOf(root.state.phase) !== -1
+              text: root.state.phase === "active" ? "Take a break"
+                : root.state.phase === "outside" ? "Take a break now" : "Start now"
               foreground: root.contentForeground
               fontFamily: root.contentFontFamily
               bordered: true
@@ -484,6 +570,98 @@ Panel {
 
           PanelSeparator { foreground: root.contentForeground }
           PanelSectionHeader {
+            text: "BREAK ROTATION"
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+          }
+
+          Text {
+            width: parent.width
+            text: "Order exact IDs to include them; remove an ID to exclude it. " +
+              "Built-ins: eyes, stand, stretch, hydrate."
+            color: root.contentForeground
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          TextField {
+            width: parent.width
+            text: Array.isArray(root.form.routineOrder) ? root.form.routineOrder.join(", ") : ""
+            placeholderText: "eyes, stand, stretch, hydrate"
+            foreground: root.contentForeground
+            Accessible.name: "Break rotation order"
+            Accessible.description: "Comma-separated built-in or custom routine IDs"
+            onEditingFinished: root.setRoutineOrder(text)
+          }
+
+          Repeater {
+            model: Array.isArray(root.form.customBreakItems) ? root.form.customBreakItems : []
+
+            delegate: Column {
+              id: customRoutineRow
+              required property var modelData
+              required property int index
+              width: contentColumn.width
+              spacing: Style.space(6)
+
+              Text {
+                text: "Custom item · " + customRoutineRow.modelData.id
+                color: root.contentForeground
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.bodySmall
+              }
+
+              TextField {
+                width: parent.width
+                text: customRoutineRow.modelData.label
+                maximumLength: 32
+                placeholderText: "Short label"
+                foreground: root.contentForeground
+                Accessible.name: "Custom break label"
+                onEditingFinished: root.updateCustomRoutine(customRoutineRow.index, "label", text)
+              }
+
+              TextField {
+                width: parent.width
+                text: customRoutineRow.modelData.instruction
+                maximumLength: 80
+                placeholderText: "One concise instruction"
+                foreground: root.contentForeground
+                Accessible.name: "Custom break instruction"
+                onEditingFinished: root.updateCustomRoutine(customRoutineRow.index, "instruction", text)
+              }
+
+              Button {
+                text: "Remove custom item"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                bordered: true
+                focusable: true
+                Accessible.role: Accessible.Button
+                Accessible.name: text
+                Accessible.onPressAction: if (enabled) root.removeCustomRoutine(customRoutineRow.index)
+                onClicked: root.removeCustomRoutine(customRoutineRow.index)
+              }
+            }
+          }
+
+          Button {
+            text: "Add custom item"
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+            bordered: true
+            focusable: true
+            enabled: !Array.isArray(root.form.customBreakItems) || root.form.customBreakItems.length < 8
+            Accessible.role: Accessible.Button
+            Accessible.name: text
+            Accessible.description: "Add one locally stored break instruction"
+            Accessible.onPressAction: if (enabled) root.addCustomRoutine()
+            onClicked: root.addCustomRoutine()
+          }
+
+          PanelSeparator { foreground: root.contentForeground }
+          PanelSectionHeader {
             text: "RHYTHM"
             foreground: root.contentForeground
             fontFamily: root.contentFontFamily
@@ -609,6 +787,166 @@ Panel {
               foreground: root.contentForeground
               fontFamily: root.contentFontFamily
               onModified: function(v) { root.setFormValue("escapeHoldSeconds", v) }
+            }
+          }
+
+          PanelSeparator { foreground: root.contentForeground }
+          PanelSectionHeader {
+            text: "WORKDAY"
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+          }
+
+          Text {
+            width: parent.width
+            text: root.state.phase === "outside"
+              ? "Automatic timing is frozen outside the selected hours. Existing owed rest is unchanged."
+              : "Automatic timing is currently inside the selected hours."
+            color: root.contentForeground
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
+          }
+
+          Toggle {
+            width: parent.width
+            label: "Only remind during selected hours"
+            description: "Use one local-time window per day; off disables that day."
+            checked: root.form.workdayHoursEnabled
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: label
+            Accessible.description: description
+            Accessible.checkable: true
+            Accessible.checked: checked
+            Accessible.onPressAction: if (enabled) root.setFormValue(
+              "workdayHoursEnabled",
+              !root.form.workdayHoursEnabled
+            )
+            Accessible.onToggleAction: if (enabled) root.setFormValue(
+              "workdayHoursEnabled",
+              !root.form.workdayHoursEnabled
+            )
+            onClicked: root.setFormValue("workdayHoursEnabled", !root.form.workdayHoursEnabled)
+          }
+
+          Toggle {
+            width: parent.width
+            label: "Prompt at the end of the workday"
+            description: "Open a non-blocking choice when an allowed window ends."
+            checked: root.form.endOfDayPromptEnabled
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: label
+            Accessible.description: description
+            Accessible.checkable: true
+            Accessible.checked: checked
+            Accessible.onPressAction: if (enabled) root.setFormValue(
+              "endOfDayPromptEnabled",
+              !root.form.endOfDayPromptEnabled
+            )
+            Accessible.onToggleAction: if (enabled) root.setFormValue(
+              "endOfDayPromptEnabled",
+              !root.form.endOfDayPromptEnabled
+            )
+            onClicked: root.setFormValue("endOfDayPromptEnabled", !root.form.endOfDayPromptEnabled)
+          }
+
+          Text {
+            width: parent.width
+            text: "Use HH:MM-HH:MM, including overnight windows such as 22:00-06:00, or off."
+            color: root.contentForeground
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Grid {
+            width: parent.width
+            columns: 2
+            columnSpacing: Style.space(12)
+            rowSpacing: Style.space(10)
+
+            Repeater {
+              model: root.workdayRows
+
+              delegate: Column {
+                id: workdayRow
+                required property var modelData
+                required property int index
+                width: (contentColumn.width - Style.space(12)) / 2
+                spacing: Style.space(4)
+
+                Text {
+                  text: workdayRow.modelData.label
+                  color: root.contentForeground
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+
+                TextField {
+                  width: parent.width
+                  text: root.form.workdayHoursByDay
+                    ? root.form.workdayHoursByDay[workdayRow.modelData.key] : "off"
+                  placeholderText: "09:00-17:00"
+                  maximumLength: 11
+                  foreground: root.contentForeground
+                  Accessible.name: workdayRow.modelData.label + " reminder hours"
+                  onEditingFinished: root.setWorkdayHours(workdayRow.modelData.key, text)
+                }
+              }
+            }
+          }
+
+          Column {
+            visible: root.state.phase === "outside"
+            width: parent.width
+            spacing: Style.space(8)
+
+            Button {
+              width: parent.width
+              text: "Continue this cycle"
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              bordered: true
+              focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Temporarily bypass workday hours until this break cycle finishes"
+              Accessible.onPressAction: if (enabled && root.service) root.service.continueWorkday()
+              onClicked: if (root.service) root.service.continueWorkday()
+            }
+
+            Button {
+              width: parent.width
+              visible: root.state.endOfDayPromptPending
+              text: "Wait for next window"
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              bordered: true
+              focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.onPressAction: if (enabled && root.service) root.service.dismissEndOfDay()
+              onClicked: if (root.service) root.service.dismissEndOfDay()
+            }
+
+            Button {
+              width: parent.width
+              text: "Stop for today"
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              bordered: true
+              focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Reset frozen progress when the next allowed window opens"
+              Accessible.onPressAction: if (enabled && root.service) root.service.stopForDay()
+              onClicked: if (root.service) root.service.stopForDay()
             }
           }
 
