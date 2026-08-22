@@ -21,4 +21,5 @@ command -v qmllint >/dev/null 2>&1 || fail "qmllint is required; run this check 
 qmllint -I "$OMARCHY_ROOT/shell" \
   "$PROJECT_ROOT/Service.qml" \
   "$PROJECT_ROOT/BarWidget.qml" \
+  "$PROJECT_ROOT/Panel.qml" \
   "$PROJECT_ROOT/Overlay.qml"
