@@ -248,7 +248,6 @@ recorded in [Release Evidence](docs/ReleaseEvidence.md).
 
 ## Documentation
 
-- [Planning Document](docs/Planning.md) — product scope, milestones, and tickets
 - [Runtime and IPC Contracts](docs/Contracts.md) — settings, state, recovery, and commands
 - [Acceptance Guide](docs/Acceptance.md) — local checks, live scenarios, and visual evidence
 - [Automation Security](docs/AutomationSecurity.md) — CI ownership, suppressions, and launch settings
