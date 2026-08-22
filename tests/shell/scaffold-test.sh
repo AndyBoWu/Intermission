@@ -60,6 +60,7 @@ runtime_files=(
 [[ ! -f $PROJECT_ROOT/Settings.js ]] || runtime_files+=("$PROJECT_ROOT/Settings.js")
 [[ ! -f $PROJECT_ROOT/BreakViewModel.js ]] || runtime_files+=("$PROJECT_ROOT/BreakViewModel.js")
 [[ ! -f $PROJECT_ROOT/StateStore.js ]] || runtime_files+=("$PROJECT_ROOT/StateStore.js")
+[[ ! -f $PROJECT_ROOT/History.js ]] || runtime_files+=("$PROJECT_ROOT/History.js")
 [[ ! -f $PROJECT_ROOT/Panel.qml ]] || runtime_files+=("$PROJECT_ROOT/Panel.qml")
 
 if grep -Eni '(^|[^[:alnum:]_])(sudo|systemctl|curl|wget)([^[:alnum:]_]|$)|https?://|execDetached|Process[[:space:]]*\{' "${runtime_files[@]}"; then
@@ -89,6 +90,12 @@ grep -Eq 'SystemClock[[:space:]]*\{' "$PROJECT_ROOT/Service.qml" \
   || fail "workday policy must follow the live local clock"
 grep -Eq 'Date\.timeZoneUpdated' "$PROJECT_ROOT/Service.qml" \
   || fail "workday policy must refresh after a timezone change"
+grep -Eq 'StateStore\.historyPath' "$PROJECT_ROOT/Service.qml" \
+  || fail "private insights must use a separate XDG history path"
+grep -Eq 'History\.appendEffects' "$PROJECT_ROOT/Service.qml" \
+  || fail "service must record bounded history through the pure history model"
+grep -Eq 'function exportHistory\(payloadJson: string\)' "$PROJECT_ROOT/Service.qml" \
+  || fail "service IPC must expose a machine-readable history export"
 
 [[ -f $PROJECT_ROOT/Panel.qml ]] || fail "bar control panel is missing"
 grep -Eq 'Qt\.resolvedUrl\("Panel\.qml"\)' "$PROJECT_ROOT/BarWidget.qml" \
@@ -119,6 +126,10 @@ grep -Eq 'workdayHoursByDay' "$PROJECT_ROOT/Panel.qml" \
   || fail "control panel must expose daily reminder windows"
 grep -Eq 'continueWorkday\(\)' "$PROJECT_ROOT/Panel.qml" \
   || fail "control panel must expose a reversible workday override"
+grep -Eq 'historyEnabled' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must expose opt-in local history"
+grep -Eq 'clearHistory\(\)' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must expose explicit local-history reset"
 grep -Eq 'summonBarWidget' "$PROJECT_ROOT/Service.qml" \
   || fail "service showPanel must route to a live bar widget"
 grep -Eq 'function stableIpcError\(error\)' "$PROJECT_ROOT/Service.qml" \
@@ -152,6 +163,11 @@ grep -Eq 'atomicWrites:[[:space:]]*true' "$PROJECT_ROOT/Service.qml" \
   || fail "runtime snapshots must use atomic writes"
 grep -Eq 'blockWrites:[[:space:]]*true' "$PROJECT_ROOT/Service.qml" \
   || fail "shutdown snapshot writes must finish before teardown"
+[[ $(grep -Ec 'atomicWrites:[[:space:]]*true' "$PROJECT_ROOT/Service.qml") -ge 2 ]] \
+  || fail "session and history files must both use atomic writes"
+grep -A2 'onSaveFailed: function(error)' "$PROJECT_ROOT/Service.qml" \
+  | grep -Eq 'snapshotWritable[[:space:]]*=[[:space:]]*false' \
+  || fail "session save failure must disable dependent history writes"
 grep -Eq 'StateStore\.sessionPath' "$PROJECT_ROOT/Service.qml" \
   || fail "runtime snapshots must use the versioned state-store path"
 grep -Eq 'Accessible\.onPressAction:.*root\.toggle\(\)' "$PROJECT_ROOT/BarWidget.qml" \

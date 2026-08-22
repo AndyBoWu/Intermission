@@ -29,6 +29,26 @@ test("settings normalize every field independently", () => {
   assertEqual(normalized.reducedMotion, true);
   assertEqual(normalized.contextDeferralEnabled, true);
   assertEqual(normalized.busyAppIds, "");
+  assertEqual(normalized.historyEnabled, false);
+  assertEqual(normalized.historyWindowDays, 7);
+});
+
+test("history settings are opt-in and accept only the supported windows", () => {
+  const enabled = Settings.normalize({
+    configVersion: 1,
+    historyEnabled: true,
+    historyWindowDays: 14
+  });
+  assertEqual(enabled.historyEnabled, true);
+  assertEqual(enabled.historyWindowDays, 14);
+
+  const invalid = Settings.normalize({
+    configVersion: 1,
+    historyEnabled: "yes",
+    historyWindowDays: 30
+  });
+  assertEqual(invalid.historyEnabled, false);
+  assertEqual(invalid.historyWindowDays, 7);
 });
 
 test("future settings versions use safe defaults without mutating input", () => {
@@ -51,6 +71,8 @@ test("explicit saves preserve unknown fields and write normalized version one", 
   form.shortWorkIntervalSeconds = 1500;
   form.longWorkIntervalSeconds = 2100;
   form.autoStart = false;
+  form.historyEnabled = true;
+  form.historyWindowDays = 14;
 
   const entry = Settings.entryFromForm(existing, form, Settings.PLUGIN_ID);
   assertEqual(entry.id, Settings.PLUGIN_ID);
@@ -62,6 +84,8 @@ test("explicit saves preserve unknown fields and write normalized version one", 
   assertEqual(entry.presetId, "custom");
   assertEqual(entry.autoStart, false);
   assertEqual(entry.naturalBreakSeconds, Settings.DEFAULTS.naturalBreakSeconds);
+  assertEqual(entry.historyEnabled, true);
+  assertEqual(entry.historyWindowDays, 14);
 });
 
 test("busy-app allowlists keep only bounded exact app ids", () => {

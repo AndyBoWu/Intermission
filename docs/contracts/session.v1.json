@@ -5,6 +5,7 @@
   "phase": "active",
   "phaseEnteredAtEpochMs": 1787356500000,
   "activeElapsedMs": 300000,
+  "historyBaselineActiveWorkMs": 0,
   "activeStartedAtEpochMs": 1787356500000,
   "workTargetMs": 1200000,
   "breakKind": "short",

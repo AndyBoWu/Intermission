@@ -55,6 +55,8 @@ configuration is overwritten without the normal Omarchy enable/save flow.
 - Optional local-time reminder hours freeze automatic timing outside the
   selected window. An end-of-day prompt can wait, stop for today, or continue
   only the current cycle.
+- Optional private history shows today plus a rolling 7- or 14-day summary
+  without tracking applications or raw activity.
 
 ## Configure
 
@@ -82,6 +84,8 @@ Defaults:
 | Custom break items | None |
 | Workday reminder hours | Off |
 | End-of-day prompt | Off |
+| Private local history | Off |
+| Insight window | 7 days |
 
 Reduced motion removes Intermission's progress transition. The interface uses
 the active Omarchy theme and keeps pointer and keyboard controls available.
@@ -106,6 +110,18 @@ this cycle** is a temporary override; it clears when that cycle's break ends.
 An invalid daily window saves as `off` so it cannot create an unexpected
 reminder period.
 
+Private insights are opt-in. When enabled, the panel shows active minutes,
+supportive breaks, deferrals, skips, early exits, adherence, active days, and
+forgiving continuity. Completed and natural breaks support adherence; skips
+count against it; deferrals and emergency exits remain neutral. Empty days do
+not break continuity, and one skip beside a supportive break is forgiven.
+Use **Show JSON export** for selectable machine-readable data or call the
+service's `exportHistory` IPC method with `{}`. **Reset history** requires a
+second press within five seconds and excludes the current cycle's earlier work
+without changing its countdown.
+If history is enabled during a running cycle, active work from before that
+save is excluded, including when the shell restarts before the cycle settles.
+
 The complete field ranges and migration behavior are in
 [Runtime and IPC Contracts](docs/Contracts.md).
 
@@ -115,6 +131,8 @@ Intermission:
 
 - stores settings in the normal Omarchy inline plugin configuration;
 - stores one runtime recovery snapshot under the user's XDG state directory;
+- optionally stores a bounded local event history under the same XDG state
+  directory, disabled by default;
 - does not send telemetry or make runtime network requests;
 - does not record window titles, typed content, screenshots, audio, camera
   input, or browsing history;
@@ -128,10 +146,25 @@ configuration. Intermission has no task-list or calendar synchronization,
 website or app blocking, system locking, or external account integration.
 
 The runtime snapshot contains cadence state, timestamps, one bounded owed-rest
-value, and an optional manual-hold deadline. Its default location is:
+value, an optional manual-hold deadline, and—only for a mid-cycle history
+opt-in—one active-work baseline used to exclude earlier work. Its default
+location is:
 
 ```text
 ${XDG_STATE_HOME:-~/.local/state}/intermission/session.json
+```
+
+When private history is enabled, `history.json` contains only fixed break
+outcomes and active-minute settlements when a cycle is stopped, along with
+local date keys, scheduled and observed durations, work targets, and fixed
+source/reason enums. It retains at
+most 30 local days, 2,000 events, and 1 MiB. It never contains observed app
+IDs, window titles, processes, typed content, or a raw activity timeline.
+Disabling history and saving removes every retained event; an empty versioned
+schema shell may remain at:
+
+```text
+${XDG_STATE_HOME:-~/.local/state}/intermission/history.json
 ```
 
 ## Recovery
@@ -167,7 +200,8 @@ omarchy plugin remove io.github.andybowu.intermission
 ```
 
 Removal unloads the plugin but intentionally leaves the local recovery
-snapshot. Delete or archive that file separately if no cadence recovery data
+snapshot and any enabled private-history file. Disable private history and save
+before removal, or delete/archive those files separately if no local data
 should remain.
 
 ## Verify

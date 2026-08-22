@@ -4,6 +4,7 @@ import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
 import "Engine.js" as Engine
+import "History.js" as History
 import "Settings.js" as Settings
 import "StateStore.js" as StateStore
 
@@ -20,6 +21,7 @@ Item {
   readonly property string home: Quickshell.env("HOME") || ""
   readonly property string xdgStateHome: Quickshell.env("XDG_STATE_HOME") || ""
   readonly property string sessionPath: StateStore.sessionPath(xdgStateHome, home)
+  readonly property string historyPath: StateStore.historyPath(xdgStateHome, home)
 
   property bool autoStart: true
   property var configuration: Settings.normalize({})
@@ -33,6 +35,15 @@ Item {
   property bool snapshotWritable: true
   property bool ready: false
   property bool initialized: false
+  property var historyDocument: History.emptyHistory()
+  property bool historySourceReady: false
+  property string historySource: ""
+  property string historySourceText: ""
+  property bool historyReady: false
+  property bool historyWritable: true
+  property bool historyFilePresent: false
+  property string historyStatus: ""
+  property var pendingHistoryPackets: []
   property var localTimeParts: Settings.localTimeParts(new Date())
   property bool workdayObservationInitialized: false
   property bool lastConfiguredReminderWindowOpen: true
@@ -65,6 +76,23 @@ Item {
   )
   readonly property bool reminderWindowOpen: configuredReminderWindowOpen ||
     (runtimeState && runtimeState.workdayOverrideActive === true)
+  readonly property bool historyRecordingAvailable: historyWritable && snapshotWritable
+  readonly property int liveHistoryActiveWorkMs: Math.max(
+    0,
+    publicState.activeElapsedMs - (Number(runtimeState.historyBaselineActiveWorkMs) || 0)
+  )
+  readonly property var todayInsights: History.summarize(
+    historyDocument,
+    localTimeParts.dateKey,
+    1,
+    liveHistoryActiveWorkMs
+  )
+  readonly property var windowInsights: History.summarize(
+    historyDocument,
+    localTimeParts.dateKey,
+    configuration.historyWindowDays,
+    liveHistoryActiveWorkMs
+  )
 
   function automaticContextBusy() {
     return root.configuration.contextDeferralEnabled === true &&
@@ -126,9 +154,19 @@ Item {
 
   function processRuntimeResult(result) {
     if (!result) return
-    if (result.changed === true) root.persistSnapshot()
-
     var effects = result.effects || []
+    var baselineBefore = Number(root.runtimeState.historyBaselineActiveWorkMs) || 0
+    var preparedHistory = {
+      effects: effects,
+      remainingBaselineMs: baselineBefore,
+      consumed: false
+    }
+    if (root.configuration.historyEnabled === true)
+      preparedHistory = History.applyActiveWorkBaseline(effects, baselineBefore)
+    var snapshotSaved = result.changed !== true || root.persistSnapshot()
+
+    if (snapshotSaved)
+      root.recordHistoryEffects(preparedHistory.effects, root.runtimeState.revision)
     if (root.effectNamed(effects, "end-of-day-prompt")) Qt.callLater(root.showPanel)
     if (root.runtimeState.phase === "break" &&
         (root.effectNamed(effects, "break-started") || root.effectNamed(effects, "restore-overlay"))) {
@@ -139,7 +177,8 @@ Item {
   }
 
   function persistSnapshot() {
-    if (!root.initialized || !root.snapshotWritable) return true
+    if (!root.initialized) return true
+    if (!root.snapshotWritable) return false
     var snapshot = Engine.snapshotState(root.runtimeState, Date.now())
     var encoded = StateStore.serializeSnapshot(snapshot)
     if (!encoded.ok) {
@@ -147,7 +186,140 @@ Item {
       return false
     }
     stateFile.setText(encoded.text)
+    return root.snapshotWritable
+  }
+
+  function setHistoryBaseline(value) {
+    var next = JSON.parse(JSON.stringify(root.runtimeState))
+    next.historyBaselineActiveWorkMs = Math.max(0, Math.floor(Number(value) || 0))
+    root.runtimeState = next
+  }
+
+  function persistHistory(allowDisabled) {
+    if (!root.historyReady || !root.historyWritable || root.historyPath === "") return false
+    if (root.configuration.historyEnabled !== true && allowDisabled !== true) return false
+    var encoded = History.serializeHistory(root.historyDocument)
+    if (!encoded.ok) {
+      root.historyWritable = false
+      root.historyStatus = encoded.message
+      return false
+    }
+    historyFile.setText(encoded.text)
+    if (!root.historyWritable) return false
+    root.historyFilePresent = true
     return true
+  }
+
+  function recordHistoryEffects(effects, revision) {
+    if (root.configuration.historyEnabled !== true) return
+    if (!root.snapshotWritable) return
+    var packet = { effects: effects || [], revision: revision }
+    if (!root.historyReady) {
+      var queued = root.pendingHistoryPackets.slice()
+      queued.push(packet)
+      root.pendingHistoryPackets = queued
+      return
+    }
+    if (!root.historyWritable) return
+    var now = Date.now()
+    var appended = History.appendEffects(
+      root.historyDocument,
+      packet.effects,
+      packet.revision,
+      now,
+      Settings.localTimeParts(new Date(now)).dateKey
+    )
+    if (!appended.changed) return
+    root.historyDocument = appended.document
+    root.persistHistory(false)
+  }
+
+  function flushPendingHistory() {
+    var queued = root.pendingHistoryPackets.slice()
+    root.pendingHistoryPackets = []
+    for (var i = 0; i < queued.length; i++)
+      root.recordHistoryEffects(queued[i].effects, queued[i].revision)
+  }
+
+  function captureHistorySource(rawHistory, source) {
+    if (root.historySourceReady) return
+    root.historySourceText = String(rawHistory || "")
+    root.historySource = source
+    root.historyFilePresent = source === "loaded"
+    root.historySourceReady = true
+    root.finalizeHistoryLoad()
+  }
+
+  function finalizeHistoryLoad() {
+    if (root.historyReady || !root.initialized || !root.historySourceReady) return
+    root.historyReady = true
+    root.historyWritable = root.historySource !== "unavailable"
+
+    if (!root.historyWritable) {
+      root.historySourceText = ""
+      root.historyStatus = "Local history storage is unavailable. Reminder timing still works."
+      root.pendingHistoryPackets = []
+      return
+    }
+
+    if (root.configuration.historyEnabled !== true) {
+      root.historyDocument = History.emptyHistory()
+      root.historySourceText = ""
+      root.pendingHistoryPackets = []
+      root.historyStatus = ""
+      if (root.historyFilePresent) root.persistHistory(true)
+      return
+    }
+
+    if (root.historySource === "loaded") {
+      var now = Date.now()
+      var parsed = History.parseHistoryText(
+        root.historySourceText,
+        now,
+        Settings.localTimeParts(new Date(now)).dateKey
+      )
+      root.historySourceText = ""
+      if (!parsed.ok) {
+        root.historyDocument = History.emptyHistory()
+        root.historyWritable = false
+        root.historyStatus = "History could not be read. Reset it explicitly to resume recording."
+        root.pendingHistoryPackets = []
+        return
+      }
+      root.historyDocument = parsed.document
+      if (parsed.changed) root.persistHistory(false)
+    } else {
+      root.historyDocument = History.emptyHistory()
+      root.historySourceText = ""
+    }
+    root.historyStatus = ""
+    root.flushPendingHistory()
+  }
+
+  function clearHistory() {
+    if (!root.historyReady || root.historyPath === "") return false
+    root.historyDocument = History.emptyHistory()
+    root.historySourceText = ""
+    root.pendingHistoryPackets = []
+    if (root.configuration.historyEnabled === true) {
+      root.setHistoryBaseline(Engine.publicState(
+        root.runtimeState,
+        Date.now(),
+        root.settings
+      ).activeElapsedMs)
+      if (root.initialized) root.persistSnapshot()
+    }
+    root.historyWritable = root.historySource !== "unavailable"
+    root.historyStatus = root.historyWritable ? "History reset" :
+      "Local history storage is unavailable. Reminder timing still works."
+    if (!root.historyWritable) return false
+    return root.persistHistory(true)
+  }
+
+  function historyExportText() {
+    if (!root.historyReady || !root.historyWritable) return ""
+    var encoded = History.serializeHistory(root.historyDocument)
+    return encoded.ok ? encoded.text : ""
   }
 
   function applyActivityResult(result) {
@@ -254,12 +426,25 @@ Item {
   }
 
   function updateSettings(rawSettings) {
+    var historyWasEnabled = root.configuration.historyEnabled === true
     var normalized = Settings.normalize(rawSettings)
     root.workdayObservationInitialized = false
     root.pendingEndOfDayPromptDateKey = ""
     root.configuration = normalized
     root.autoStart = normalized.autoStart
     root.settings = Engine.normalizeSettings(normalized)
+    if (!historyWasEnabled && normalized.historyEnabled === true) {
+      root.setHistoryBaseline(Engine.publicState(
+        root.runtimeState,
+        Date.now(),
+        root.settings
+      ).activeElapsedMs)
+      if (root.initialized) root.persistSnapshot()
+    } else if (historyWasEnabled && normalized.historyEnabled !== true) {
+      root.setHistoryBaseline(0)
+      if (root.initialized) root.persistSnapshot()
+      if (root.historyReady) root.clearHistory()
+    }
   }
 
   function initializeFromSnapshot(rawSnapshot, source) {
@@ -282,8 +467,11 @@ Item {
       root.runtimeState = restored.state
       root.lastEffects = restored.effects || []
     }
+    if (root.configuration.historyEnabled !== true)
+      root.setHistoryBaseline(0)
 
     root.initialized = true
+    root.finalizeHistoryLoad()
     root.ready = true
     root.lastError = null
 
@@ -372,6 +560,7 @@ Item {
         busyContext: root.busyContext,
         busyContextReason: root.busyContextReason,
         manualHoldRemainingSeconds: projected.manualHoldRemainingSeconds,
+        activeElapsedSeconds: projected.activeElapsedSeconds,
         outsideHours: projected.outsideHours,
         outsideResumePhase: projected.outsideResumePhase,
         workdayOverrideActive: projected.workdayOverrideActive,
@@ -383,6 +572,21 @@ Item {
 
   function ipcError(command, code, message) {
     return root.ipcResponse(command, false, { code: code, message: message })
+  }
+
+  function ipcHistoryExport(command) {
+    if (!root.historyReady)
+      return root.ipcError(command, "INTERNAL_ERROR", "History is still loading")
+    if (!root.historyWritable)
+      return root.ipcError(command, "PERSISTENCE_ERROR", root.historyStatus || "History is unavailable")
+    return JSON.stringify({
+      ok: true,
+      command: command,
+      enabled: root.configuration.historyEnabled === true,
+      retention: { days: History.RETENTION_DAYS, maxEvents: History.MAX_EVENTS },
+      history: root.historyDocument,
+      error: null
+    })
   }
 
   function stableIpcError(error) {
@@ -420,6 +624,7 @@ Item {
 
     var succeeded = false
     if (command === "status") return root.ipcResponse(command, true, null)
+    if (command === "exportHistory") return root.ipcHistoryExport(command)
     if (command === "start") succeeded = root.start()
     else if (command === "pause") succeeded = root.pause()
     else if (command === "resume") succeeded = root.resume()
@@ -471,10 +676,35 @@ Item {
       Qt.callLater(function() { root.initializeFromSnapshot("", source) })
     }
     onSaveFailed: function(error) {
+      root.snapshotWritable = false
       root.lastError = {
         code: "PERSISTENCE_ERROR",
         message: "Runtime snapshot could not be saved: " + FileViewError.toString(error)
       }
+    }
+  }
+
+  FileView {
+    id: historyFile
+    path: root.historyPath
+    watchChanges: false
+    atomicWrites: true
+    blockWrites: true
+    printErrors: false
+
+    onLoaded: {
+      var raw = text()
+      Qt.callLater(function() { root.captureHistorySource(raw, "loaded") })
+    }
+    onLoadFailed: function(error) {
+      var source = error === FileViewError.FileNotFound ? "missing" : "unavailable"
+      Qt.callLater(function() { root.captureHistorySource("", source) })
+    }
+    onSaveFailed: function(error) {
+      root.historyWritable = false
+      root.historyStatus = (root.configuration.historyEnabled === true
+        ? "History could not be saved: "
+        : "Local history could not be cleared: ") + FileViewError.toString(error)
     }
   }
 
@@ -522,16 +752,21 @@ Item {
     function openOverlay(payloadJson: string): string { return root.runIpc("openOverlay", payloadJson) }
     function hideOverlay(payloadJson: string): string { return root.runIpc("hideOverlay", payloadJson) }
     function showPanel(payloadJson: string): string { return root.runIpc("showPanel", payloadJson) }
+    function exportHistory(payloadJson: string): string { return root.runIpc("exportHistory", payloadJson) }
   }
 
   Component.onCompleted: {
     root.refreshLocalTime(localClock.date)
     if (root.sessionPath === "")
       Qt.callLater(function() { root.initializeFromSnapshot("", "unavailable") })
+    if (root.historyPath === "")
+      Qt.callLater(function() { root.captureHistorySource("", "unavailable") })
   }
 
   Component.onDestruction: {
     if (root.initialized) root.persistSnapshot()
+    if (root.configuration.historyEnabled === true && root.historyWritable)
+      root.persistHistory(false)
     root.hideOverlay("shutdown")
   }
 }

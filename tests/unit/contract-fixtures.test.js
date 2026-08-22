@@ -24,6 +24,8 @@ test("settings fixture exposes the version 1 cadence defaults", () => {
   assertDeepEqual(settings.customBreakItems, []);
   assertEqual(settings.workdayHoursEnabled, false);
   assertEqual(settings.endOfDayPromptEnabled, false);
+  assertEqual(settings.historyEnabled, false);
+  assertEqual(settings.historyWindowDays, 7);
 });
 
 test("session fixture uses a supported phase and monotonic revision", () => {
@@ -33,6 +35,7 @@ test("session fixture uses a supported phase and monotonic revision", () => {
   assert(phases.includes(session.phase), "Session phase must be supported");
   assert(Number.isInteger(session.revision) && session.revision >= 0, "Revision must be non-negative");
   assertEqual(session.breakDebtMs, 0);
+  assertEqual(session.historyBaselineActiveWorkMs, 0);
   assertEqual(session.contextDeferred, false);
   assertEqual(session.workdayOverrideActive, false);
   assertEqual(session.endOfDayPromptPending, false);
@@ -44,4 +47,6 @@ test("history fixture contains only versioned event data", () => {
   assert(Array.isArray(history.events), "History events must be an array");
   assertEqual(history.events[0].type, "completed");
   assertEqual(history.events[0].source, "overlay");
+  assertEqual(history.events[0].localDateKey, "2026-08-21");
+  assertEqual(history.events[0].activeWorkMs, 1200000);
 });
