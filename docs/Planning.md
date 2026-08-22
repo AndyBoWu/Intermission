@@ -388,7 +388,7 @@ release is ready for an owner visibility decision.
 Goal: improve timing and long-term usefulness without expanding into a task or
 surveillance product.
 
-- [ ] [#11 — Add context-aware deferral and break debt](https://github.com/AndyBoWu/Intermission/issues/11)
+- [x] [#11 — Add context-aware deferral and break debt](https://github.com/AndyBoWu/Intermission/issues/11)
 - [ ] [#12 — Add custom break rotation and workday policy](https://github.com/AndyBoWu/Intermission/issues/12)
 - [ ] [#13 — Add private local history and humane adherence insights](https://github.com/AndyBoWu/Intermission/issues/13)
 

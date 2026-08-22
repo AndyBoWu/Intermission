@@ -220,6 +220,119 @@ test("deferring keeps cadence pending until the break is consumed", () => {
   assertEqual(completed.effects[0].type, "break-completed");
 });
 
+test("a busy context defers one due break without repeatedly adding debt", () => {
+  const options = settings();
+  const warning = atWarning(options);
+  const deferred = Engine.transition(
+    warning,
+    { type: "tick", busyContext: true },
+    100 * SECOND,
+    options
+  );
+
+  assert(deferred.ok);
+  assertEqual(deferred.state.phase, "warning");
+  assertEqual(deferred.state.contextDeferred, true);
+  assertEqual(deferred.state.breakDebtMs, 20 * SECOND);
+  assertEqual(deferred.state.pendingDebtRecorded, true);
+  assertEqual(deferred.effects[0].type, "break-context-deferred");
+
+  const repeated = Engine.transition(
+    deferred.state,
+    { type: "tick", busyContext: true },
+    200 * SECOND,
+    options
+  );
+  assertEqual(repeated.changed, false);
+  assertEqual(repeated.state.breakDebtMs, 20 * SECOND);
+});
+
+test("a context-deferred break gets a bounded recovery warning at the next eligible moment", () => {
+  const options = settings({ warningSeconds: 30 });
+  const state = started(0, options);
+  const warning = Engine.transition(state, { type: "tick" }, 70 * SECOND, options).state;
+  const deferred = Engine.transition(
+    warning,
+    { type: "tick", busyContext: true },
+    100 * SECOND,
+    options
+  ).state;
+
+  const eligible = Engine.transition(
+    deferred,
+    { type: "tick", busyContext: false },
+    200 * SECOND,
+    options
+  );
+  assertEqual(eligible.state.phase, "warning");
+  assertEqual(eligible.state.contextDeferred, false);
+  assertEqual(Engine.publicState(eligible.state, 200 * SECOND, options).remainingSeconds, 10);
+  assertEqual(eligible.effects[0].type, "break-context-available");
+
+  const due = Engine.transition(
+    eligible.state,
+    { type: "tick", busyContext: false },
+    210 * SECOND,
+    options
+  );
+  assertEqual(due.state.phase, "break");
+});
+
+test("manual defer and skip record bounded owed rest only once per pending break", () => {
+  const options = settings({ shortBreakSeconds: 20, longBreakSeconds: 60 });
+  const warning = atWarning(options);
+  const first = Engine.transition(warning, { type: "snooze" }, 91 * SECOND, options).state;
+  assertEqual(first.breakDebtMs, 20 * SECOND);
+  assertEqual(first.pendingDebtRecorded, true);
+
+  const dueAgain = Engine.transition(first, { type: "tick" }, 151 * SECOND, options).state;
+  const second = Engine.transition(dueAgain, { type: "snooze" }, 152 * SECOND, options).state;
+  assertEqual(second.breakDebtMs, 20 * SECOND);
+
+  const skipped = Engine.transition(second, { type: "skip" }, 153 * SECOND, options).state;
+  assertEqual(skipped.breakDebtMs, 20 * SECOND);
+  assertEqual(skipped.pendingDebtRecorded, false);
+
+  let current = skipped;
+  for (let index = 0; index < 5; index += 1) {
+    current = Engine.transition(current, { type: "startBreak" }, (160 + index * 30) * SECOND, options).state;
+    current = Engine.transition(current, { type: "emergencyExit" }, (161 + index * 30) * SECOND, options).state;
+  }
+  assertEqual(current.breakDebtMs, 60 * SECOND);
+});
+
+test("completed and natural breaks pay down one bounded owed-rest value", () => {
+  const options = settings({ shortBreakSeconds: 20, longBreakSeconds: 60 });
+  const warning = atWarning(options);
+  const skipped = Engine.transition(warning, { type: "skip" }, 91 * SECOND, options).state;
+  assertEqual(skipped.breakDebtMs, 20 * SECOND);
+
+  const activeBreak = Engine.transition(skipped, { type: "startBreak" }, 92 * SECOND, options).state;
+  const completed = Engine.transition(activeBreak, { type: "completeBreak" }, 112 * SECOND, options).state;
+  assertEqual(completed.breakDebtMs, 0);
+
+  const skippedAgain = Engine.transition(atWarning(options), { type: "skip" }, 91 * SECOND, options).state;
+  const idle = Engine.transition(skippedAgain, { type: "enterIdle" }, 100 * SECOND, options).state;
+  const natural = Engine.transition(idle, {
+    type: "naturalBreak",
+    durationMs: 120 * SECOND
+  }, 220 * SECOND, options).state;
+  assertEqual(natural.breakDebtMs, 0);
+});
+
+test("a bounded manual hold is persisted and can be cleared", () => {
+  const options = settings();
+  const state = started(0, options);
+  const held = Engine.transition(state, { type: "holdContext", seconds: 1800 }, SECOND, options);
+  assert(held.ok);
+  assertEqual(held.state.manualHoldUntilEpochMs, 1801 * SECOND);
+  assertEqual(Engine.publicState(held.state, 301 * SECOND, options).manualHoldRemainingSeconds, 1500);
+
+  const cleared = Engine.transition(held.state, { type: "clearContextHold" }, 2 * SECOND, options);
+  assert(cleared.ok);
+  assertEqual(cleared.state.manualHoldUntilEpochMs, null);
+});
+
 test("repeated idempotent actions do not create new revisions", () => {
   const options = settings();
   const state = started(0, options);
@@ -299,6 +412,40 @@ test("stopped snapshots use the contract null break and round-trip", () => {
   const restored = Engine.restoreState(stopped, 20 * SECOND, options);
   assert(restored.ok);
   assertEqual(restored.state.phase, "stopped");
+});
+
+test("older version-one snapshots receive additive context defaults", () => {
+  const options = settings();
+  const legacy = started(0, options);
+  delete legacy.breakDebtMs;
+  delete legacy.pendingDebtRecorded;
+  delete legacy.contextDeferred;
+  delete legacy.manualHoldUntilEpochMs;
+  legacy.savedAtEpochMs = 10 * SECOND;
+
+  const restored = Engine.restoreState(legacy, 20 * SECOND, options);
+  assert(restored.ok);
+  assertEqual(restored.state.breakDebtMs, 0);
+  assertEqual(restored.state.pendingDebtRecorded, false);
+  assertEqual(restored.state.contextDeferred, false);
+  assertEqual(restored.state.manualHoldUntilEpochMs, null);
+});
+
+test("context deferral and owed rest survive snapshot recovery", () => {
+  const options = settings();
+  const deferred = Engine.transition(
+    atWarning(options),
+    { type: "tick", busyContext: true },
+    100 * SECOND,
+    options
+  ).state;
+  const snapshot = Engine.snapshotState(deferred, 101 * SECOND);
+  const restored = Engine.restoreState(snapshot, 110 * SECOND, options);
+
+  assert(restored.ok);
+  assertEqual(restored.state.phase, "warning");
+  assertEqual(restored.state.contextDeferred, true);
+  assertEqual(restored.state.breakDebtMs, 20 * SECOND);
 });
 
 test("restore excludes shell downtime from active use", () => {

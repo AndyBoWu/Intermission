@@ -362,3 +362,26 @@ test("a real idle signal does not freeze an active break", () => {
   assertEqual(completed.effects[0].type, "break-completed");
   assertEqual(completed.state.activeElapsedMs, 0);
 });
+
+test("heartbeat carries a busy context into the due-break policy", () => {
+  const options = settings();
+  const current = session(options);
+  const warning = Engine.heartbeat(
+    current.state,
+    current.context,
+    BASE + 90 * SECOND,
+    options,
+    { busyContext: true, suspensionThresholdMs: 120 * SECOND }
+  );
+  const deferred = Engine.heartbeat(
+    warning.state,
+    warning.context,
+    BASE + 100 * SECOND,
+    options,
+    { busyContext: true, suspensionThresholdMs: 120 * SECOND }
+  );
+
+  assertEqual(deferred.state.phase, "warning");
+  assertEqual(deferred.state.contextDeferred, true);
+  assertEqual(deferred.state.breakDebtMs, 20 * SECOND);
+});

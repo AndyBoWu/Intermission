@@ -27,6 +27,8 @@ test("settings normalize every field independently", () => {
   assertEqual(normalized.naturalBreakSeconds, 180);
   assertEqual(normalized.escapeHoldSeconds, 4);
   assertEqual(normalized.reducedMotion, true);
+  assertEqual(normalized.contextDeferralEnabled, true);
+  assertEqual(normalized.busyAppIds, "");
 });
 
 test("future settings versions use safe defaults without mutating input", () => {
@@ -60,6 +62,22 @@ test("explicit saves preserve unknown fields and write normalized version one", 
   assertEqual(entry.presetId, "custom");
   assertEqual(entry.autoStart, false);
   assertEqual(entry.naturalBreakSeconds, Settings.DEFAULTS.naturalBreakSeconds);
+});
+
+test("busy-app allowlists keep only bounded exact app ids", () => {
+  const normalized = Settings.normalize({
+    configVersion: 1,
+    contextDeferralEnabled: false,
+    busyAppIds: " Firefox, org.gnome.Evince  firefox  bad/id  "
+  });
+
+  assertEqual(normalized.contextDeferralEnabled, false);
+  assertEqual(normalized.busyAppIds, "firefox, org.gnome.evince");
+  assertDeepEqual(Settings.appIdList(normalized.busyAppIds), ["firefox", "org.gnome.evince"]);
+  assertEqual(Settings.appIdAllowed("FIREFOX", normalized.busyAppIds), true);
+  assertEqual(Settings.appIdAllowed("firefox-nightly", normalized.busyAppIds), false);
+  assertEqual(Settings.addAppId(normalized.busyAppIds, "com.example.Slides"),
+    "firefox, org.gnome.evince, com.example.slides");
 });
 
 test("named cadence presets apply atomically and persist their identity", () => {
