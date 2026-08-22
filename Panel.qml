@@ -56,6 +56,15 @@ Panel {
     root.saveMessage = ""
   }
 
+  function shiftPreset(direction) {
+    var presetIds = ["balanced", "frequent", "spacious"]
+    var currentIndex = presetIds.indexOf(String(root.form.presetId || ""))
+    if (currentIndex < 0) currentIndex = 0
+    var offset = direction < 0 ? -1 : 1
+    var nextIndex = (currentIndex + offset + presetIds.length) % presetIds.length
+    root.applyPreset(presetIds[nextIndex])
+  }
+
   function refreshForm() {
     root.form = Settings.formFromSettings(root.settings)
     root.dirty = false
@@ -179,9 +188,11 @@ Panel {
 
               Text {
                 text: root.phaseLabel() + (root.service && root.service.isIdle ? " · away" : "")
-                color: Qt.darker(root.contentForeground, 1.35)
+                color: root.contentForeground
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.body
+                Accessible.role: Accessible.StaticText
+                Accessible.name: "Intermission status " + text
               }
             }
 
@@ -210,6 +221,10 @@ Panel {
               fontFamily: root.contentFontFamily
               bordered: true
               focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Start the break rhythm"
+              Accessible.onPressAction: if (enabled && root.service) root.service.start()
               onClicked: if (root.service) root.service.start()
             }
 
@@ -222,6 +237,10 @@ Panel {
               fontFamily: root.contentFontFamily
               bordered: true
               focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Pause active-use timing"
+              Accessible.onPressAction: if (enabled && root.service) root.service.pause()
               onClicked: if (root.service) root.service.pause()
             }
 
@@ -234,6 +253,10 @@ Panel {
               fontFamily: root.contentFontFamily
               bordered: true
               focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Resume active-use timing"
+              Accessible.onPressAction: if (enabled && root.service) root.service.resume()
               onClicked: if (root.service) root.service.resume()
             }
 
@@ -245,6 +268,10 @@ Panel {
               fontFamily: root.contentFontFamily
               bordered: true
               focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Begin the pending break now"
+              Accessible.onPressAction: if (enabled && root.service) root.service.startBreak()
               onClicked: if (root.service) root.service.startBreak()
             }
 
@@ -255,6 +282,10 @@ Panel {
               fontFamily: root.contentFontFamily
               bordered: true
               focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Postpone the pending break once"
+              Accessible.onPressAction: if (enabled && root.service) root.service.snooze()
               onClicked: if (root.service) root.service.snooze()
             }
 
@@ -265,6 +296,10 @@ Panel {
               fontFamily: root.contentFontFamily
               bordered: true
               focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Skip the pending break and advance the cadence"
+              Accessible.onPressAction: if (enabled && root.service) root.service.skip("user")
               onClicked: if (root.service) root.service.skip("user")
             }
 
@@ -276,6 +311,10 @@ Panel {
               fontFamily: root.contentFontFamily
               bordered: true
               focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Complete the current break"
+              Accessible.onPressAction: if (enabled && root.service) root.service.completeBreak("panel")
               onClicked: if (root.service) root.service.completeBreak("panel")
             }
           }
@@ -292,7 +331,7 @@ Panel {
             text: root.form.presetId === "custom"
               ? "Custom timing"
               : "Choose a starting rhythm, then adjust any field if needed."
-            color: Qt.darker(root.contentForeground, 1.3)
+            color: root.contentForeground
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap
@@ -307,6 +346,14 @@ Panel {
             value: root.form.presetId
             foreground: root.contentForeground
             fontFamily: root.contentFontFamily
+            Accessible.role: Accessible.ComboBox
+            Accessible.name: "Cadence preset: " + String(root.form.presetId || "custom")
+            Accessible.description: "Choose Balanced, Frequent, or Spacious timing. Use increase or decrease to change the preset."
+            Accessible.focusable: focusable
+            Accessible.focused: activeFocus
+            Accessible.onDecreaseAction: if (enabled) root.shiftPreset(-1)
+            Accessible.onIncreaseAction: if (enabled) root.shiftPreset(1)
+            Accessible.onPressAction: if (enabled) root.shiftPreset(1)
             onChanged: function(value) { root.applyPreset(value) }
           }
 
@@ -416,6 +463,13 @@ Panel {
             checked: root.form.autoStart
             foreground: root.contentForeground
             fontFamily: root.contentFontFamily
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: label
+            Accessible.description: description
+            Accessible.checkable: true
+            Accessible.checked: checked
+            Accessible.onPressAction: if (enabled) root.setFormValue("autoStart", !root.form.autoStart)
+            Accessible.onToggleAction: if (enabled) root.setFormValue("autoStart", !root.form.autoStart)
             onClicked: root.setFormValue("autoStart", !root.form.autoStart)
           }
 
@@ -426,6 +480,13 @@ Panel {
             checked: root.form.reducedMotion
             foreground: root.contentForeground
             fontFamily: root.contentFontFamily
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: label
+            Accessible.description: description
+            Accessible.checkable: true
+            Accessible.checked: checked
+            Accessible.onPressAction: if (enabled) root.setFormValue("reducedMotion", !root.form.reducedMotion)
+            Accessible.onToggleAction: if (enabled) root.setFormValue("reducedMotion", !root.form.reducedMotion)
             onClicked: root.setFormValue("reducedMotion", !root.form.reducedMotion)
           }
 
@@ -442,16 +503,22 @@ Panel {
               focusable: true
               enabled: root.dirty
               opacity: enabled ? 1.0 : 0.55
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Persist Intermission settings"
+              Accessible.onPressAction: if (enabled) root.saveSettings()
               onClicked: root.saveSettings()
             }
 
             Text {
               text: root.saveMessage
               visible: text !== ""
-              color: Qt.darker(root.contentForeground, 1.3)
+              color: root.contentForeground
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.bodySmall
               anchors.verticalCenter: parent.verticalCenter
+              Accessible.role: Accessible.StaticText
+              Accessible.name: text
             }
           }
         }

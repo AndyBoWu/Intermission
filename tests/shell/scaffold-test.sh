@@ -125,5 +125,15 @@ grep -Eq 'blockWrites:[[:space:]]*true' "$PROJECT_ROOT/Service.qml" \
   || fail "shutdown snapshot writes must finish before teardown"
 grep -Eq 'StateStore\.sessionPath' "$PROJECT_ROOT/Service.qml" \
   || fail "runtime snapshots must use the versioned state-store path"
+grep -Eq 'Accessible\.onPressAction:.*root\.toggle\(\)' "$PROJECT_ROOT/BarWidget.qml" \
+  || fail "bar widget must expose an accessible activation action"
+grep -Eq 'Accessible\.onPressAction:.*root\.requestComplete\(\)' "$PROJECT_ROOT/Overlay.qml" \
+  || fail "overlay completion must expose an accessible action"
+grep -Eq 'enabled:[[:space:]]*!root\.reducedMotion' "$PROJECT_ROOT/Overlay.qml" \
+  || fail "overlay progress must honor reduced motion"
+grep -Eq 'Accessible\.role:[[:space:]]*Accessible\.ComboBox' "$PROJECT_ROOT/Panel.qml" \
+  || fail "cadence presets must expose an accessible selector"
+grep -Eq 'Accessible\.onIncreaseAction:.*root\.shiftPreset\(1\)' "$PROJECT_ROOT/Panel.qml" \
+  || fail "cadence presets must expose accessible selection actions"
 
 echo "ok - scaffold contract"

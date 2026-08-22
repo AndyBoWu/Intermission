@@ -8,6 +8,7 @@
     "test:shell": "bash tests/shell/scaffold-test.sh",
     "test:live": "bash tests/shell/live-lifecycle-test.sh",
     "lint:qml": "bash tests/qml-lint.sh",
-    "check": "npm run test && npm run test:shell && npm run lint:qml"
+    "audit:release": "bash tests/release-audit.sh",
+    "check": "npm run test && npm run test:shell && npm run audit:release && npm run lint:qml"
   }
 }

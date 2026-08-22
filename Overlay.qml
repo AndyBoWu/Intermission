@@ -26,6 +26,8 @@ Item {
   readonly property int escapeHoldSeconds: service && service.configuration
     ? Number(service.configuration.escapeHoldSeconds) || 3 : 3
   readonly property int escapeHoldMs: escapeHoldSeconds * 1000
+  readonly property bool reducedMotion: service && service.configuration
+    ? service.configuration.reducedMotion === true : false
   readonly property var state: service && service.ready
     ? service.publicState
     : ({ phase: "stopped", breakKind: "short", cycleIndex: 0, remainingSeconds: 0, paused: false })
@@ -319,6 +321,8 @@ Item {
                 font.pixelSize: overlayWindow.compact ? Style.font.heading : Style.font.display
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
+                Accessible.role: Accessible.StaticText
+                Accessible.name: root.presentation.title + ". " + text
               }
 
               Rectangle {
@@ -333,6 +337,11 @@ Item {
                   height: parent.height
                   radius: parent.radius
                   color: Color.accent
+
+                  Behavior on width {
+                    enabled: !root.reducedMotion
+                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                  }
                 }
               }
 
@@ -351,6 +360,7 @@ Item {
                 Accessible.role: Accessible.Button
                 Accessible.name: text
                 Accessible.description: "Complete the current break and return to the active interval"
+                Accessible.onPressAction: if (enabled) root.requestComplete()
                 onClicked: root.requestComplete()
               }
 
@@ -364,6 +374,8 @@ Item {
                 font.family: Style.font.family
                 font.pixelSize: Style.font.body
                 horizontalAlignment: Text.AlignHCenter
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
               }
             }
           }
