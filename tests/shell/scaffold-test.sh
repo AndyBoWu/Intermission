@@ -70,6 +70,17 @@ grep -Eq 'IdleMonitor[[:space:]]*\{' "$PROJECT_ROOT/Service.qml" \
   || fail "service must use the compositor idle monitor"
 grep -Eq 'respectInhibitors:[[:space:]]*true' "$PROJECT_ROOT/Service.qml" \
   || fail "idle monitoring must respect inhibitors"
+grep -Eq 'ToplevelManager\.activeToplevel' "$PROJECT_ROOT/Service.qml" \
+  || fail "context timing must use the current Wayland toplevel"
+grep -Eq 'activeToplevel\.appId' "$PROJECT_ROOT/Service.qml" \
+  || fail "selected-app matching must use an app id"
+grep -Eq 'activeToplevel\.fullscreen|focusedWorkspace\.hasFullscreen' "$PROJECT_ROOT/Service.qml" \
+  || fail "context timing must observe focused fullscreen state"
+grep -Eq 'firstPartyServiceFor\("omarchy\.idle"\)' "$PROJECT_ROOT/Service.qml" \
+  || fail "presentation timing must honor the host stay-awake mode"
+if grep -Eq 'activeToplevel\.title|\.windowTitle' "$PROJECT_ROOT/Service.qml"; then
+  fail "context timing must not read window titles"
+fi
 grep -Eq 'Engine\.activitySignal' "$PROJECT_ROOT/Service.qml" \
   || fail "service must route idle signals through the pure engine"
 grep -Eq 'Engine\.heartbeat' "$PROJECT_ROOT/Service.qml" \
@@ -90,6 +101,12 @@ grep -Eq 'shortWorkIntervalSeconds' "$PROJECT_ROOT/Panel.qml" \
   || fail "control panel must expose the short work interval"
 grep -Eq 'longWorkIntervalSeconds' "$PROJECT_ROOT/Panel.qml" \
   || fail "control panel must expose the long work interval"
+grep -Eq 'contextDeferralEnabled' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must expose context deferral"
+grep -Eq 'busyAppIds' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must expose exact app-id controls"
+grep -Eq 'holdReminders\(1800\)' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must expose a bounded manual hold"
 grep -Eq 'summonBarWidget' "$PROJECT_ROOT/Service.qml" \
   || fail "service showPanel must route to a live bar widget"
 grep -Eq 'function stableIpcError\(error\)' "$PROJECT_ROOT/Service.qml" \

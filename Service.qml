@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
 import "Engine.js" as Engine
@@ -38,6 +39,41 @@ Item {
   readonly property int suspensionThresholdMs: 5000
   readonly property bool isIdle: activityContext && activityContext.isIdle === true
   readonly property var publicState: Engine.publicState(runtimeState, displayNowEpochMs, settings)
+  readonly property var activeToplevel: ToplevelManager.activeToplevel
+  readonly property string currentAppId: activeToplevel
+    ? String(activeToplevel.appId || "").trim().toLowerCase() : ""
+  readonly property var hostIdleService: shell && typeof shell.firstPartyServiceFor === "function"
+    ? shell.firstPartyServiceFor("omarchy.idle") : null
+  readonly property bool hostStayAwake: hostIdleService && hostIdleService.stayAwake === true
+  readonly property bool fullscreenContext: (activeToplevel && activeToplevel.fullscreen === true) ||
+    (Hyprland.focusedWorkspace && Hyprland.focusedWorkspace.hasFullscreen === true)
+  readonly property bool allowlistedContext: Settings.appIdAllowed(
+    currentAppId,
+    configuration.busyAppIds
+  )
+  readonly property bool manualHoldContext: runtimeState &&
+    Number(runtimeState.manualHoldUntilEpochMs) > displayNowEpochMs
+  readonly property bool busyContext: busyContextAt(displayNowEpochMs)
+  readonly property string busyContextReason: contextReasonAt(displayNowEpochMs)
+
+  function automaticContextBusy() {
+    return root.configuration.contextDeferralEnabled === true &&
+      (root.hostStayAwake || root.fullscreenContext || root.allowlistedContext)
+  }
+
+  function busyContextAt(now) {
+    var manual = root.runtimeState && Number(root.runtimeState.manualHoldUntilEpochMs) > now
+    return manual || root.automaticContextBusy()
+  }
+
+  function contextReasonAt(now) {
+    if (root.runtimeState && Number(root.runtimeState.manualHoldUntilEpochMs) > now) return "manual hold"
+    if (root.configuration.contextDeferralEnabled !== true) return ""
+    if (root.hostStayAwake) return "stay-awake mode"
+    if (root.fullscreenContext) return "fullscreen"
+    if (root.allowlistedContext) return "selected app"
+    return ""
+  }
 
   function effectNamed(effects, name) {
     var values = Array.isArray(effects) ? effects : []
@@ -137,7 +173,8 @@ Item {
       root.settings,
       {
         expectedIntervalMs: root.heartbeatIntervalMs,
-        suspensionThresholdMs: root.suspensionThresholdMs
+        suspensionThresholdMs: root.suspensionThresholdMs,
+        busyContext: root.busyContextAt(now)
       }
     )
     root.displayNowEpochMs = now
@@ -243,6 +280,12 @@ Item {
     if (seconds !== undefined && seconds !== null) event.seconds = seconds
     return root.dispatch(event)
   }
+  function holdReminders(seconds) {
+    return root.dispatch({ type: "holdContext", seconds: seconds || 1800 })
+  }
+  function clearReminderHold() {
+    return root.dispatch({ type: "clearContextHold" })
+  }
 
   function showPanel() {
     return !!(root.shell && root.shell.bar &&
@@ -277,7 +320,12 @@ Item {
         breakKind: projected.breakKind,
         cycleIndex: projected.cycleIndex,
         remainingSeconds: projected.remainingSeconds,
-        overlayOpen: root.overlayOpen
+        overlayOpen: root.overlayOpen,
+        breakDebtSeconds: projected.breakDebtSeconds,
+        contextDeferred: projected.contextDeferred,
+        busyContext: root.busyContext,
+        busyContextReason: root.busyContextReason,
+        manualHoldRemainingSeconds: projected.manualHoldRemainingSeconds
       },
       error: error || null
     })
@@ -394,6 +442,10 @@ Item {
     running: root.ready
     triggeredOnStart: false
     onTriggered: root.observe(Date.now())
+  }
+
+  onBusyContextChanged: {
+    if (root.ready) Qt.callLater(function() { root.observe(Date.now()) })
   }
 
   IpcHandler {

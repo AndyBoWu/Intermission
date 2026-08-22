@@ -14,7 +14,9 @@ var DEFAULTS = {
   snoozeSeconds: 300,
   naturalBreakSeconds: 120,
   escapeHoldSeconds: 3,
-  reducedMotion: false
+  reducedMotion: false,
+  contextDeferralEnabled: true,
+  busyAppIds: ""
 }
 
 var INTEGER_FIELDS = {
@@ -74,6 +76,34 @@ function validInteger(value, bounds) {
   return Number.isInteger(value) && value >= bounds.minimum && value <= bounds.maximum
 }
 
+function appIdList(raw) {
+  var values = Array.isArray(raw) ? raw : String(raw || "").split(/[\s,]+/)
+  var result = []
+  for (var i = 0; i < values.length && result.length < 20; i++) {
+    var value = String(values[i] || "").trim().toLowerCase()
+    if (!/^[a-z0-9._-]{1,128}$/.test(value) || result.indexOf(value) !== -1) continue
+    result.push(value)
+  }
+  return result
+}
+
+function appIdText(raw) {
+  return appIdList(raw).join(", ")
+}
+
+function appIdAllowed(appId, rawAllowlist) {
+  var candidate = String(appId || "").trim().toLowerCase()
+  return candidate !== "" && appIdList(rawAllowlist).indexOf(candidate) !== -1
+}
+
+function addAppId(rawAllowlist, appId) {
+  var values = appIdList(rawAllowlist)
+  var candidate = String(appId || "").trim().toLowerCase()
+  if (/^[a-z0-9._-]{1,128}$/.test(candidate) && values.indexOf(candidate) === -1)
+    values.push(candidate)
+  return appIdText(values)
+}
+
 function matchingPreset(values) {
   for (var presetId in PRESETS) {
     var preset = PRESETS[presetId]
@@ -97,6 +127,9 @@ function normalize(raw) {
 
   if (typeof source.autoStart === "boolean") result.autoStart = source.autoStart
   if (typeof source.reducedMotion === "boolean") result.reducedMotion = source.reducedMotion
+  if (typeof source.contextDeferralEnabled === "boolean")
+    result.contextDeferralEnabled = source.contextDeferralEnabled
+  result.busyAppIds = appIdText(source.busyAppIds)
 
   for (var field in INTEGER_FIELDS) {
     if (field === "workIntervalSeconds" || field === "shortWorkIntervalSeconds" ||
@@ -169,6 +202,8 @@ function entryFromForm(existing, form, pluginId) {
   entry.workIntervalSeconds = normalized.shortWorkIntervalSeconds
   entry.presetId = normalized.presetId
   entry.reducedMotion = normalized.reducedMotion
+  entry.contextDeferralEnabled = normalized.contextDeferralEnabled
+  entry.busyAppIds = normalized.busyAppIds
   return entry
 }
 
@@ -179,6 +214,10 @@ if (typeof module !== "undefined") {
     INTEGER_FIELDS: INTEGER_FIELDS,
     PRESETS: PRESETS,
     PRESET_FIELDS: PRESET_FIELDS,
+    appIdList: appIdList,
+    appIdText: appIdText,
+    appIdAllowed: appIdAllowed,
+    addAppId: addAppId,
     normalize: normalize,
     matchingPreset: matchingPreset,
     applyPreset: applyPreset,

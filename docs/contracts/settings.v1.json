@@ -13,5 +13,7 @@
   "snoozeSeconds": 300,
   "naturalBreakSeconds": 120,
   "escapeHoldSeconds": 3,
-  "reducedMotion": false
+  "reducedMotion": false,
+  "contextDeferralEnabled": true,
+  "busyAppIds": ""
 }

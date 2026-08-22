@@ -45,6 +45,8 @@ Example: [`contracts/settings.v1.json`](contracts/settings.v1.json)
 | `naturalBreakSeconds` | integer | `120` | `30`–`3600` |
 | `escapeHoldSeconds` | integer | `3` | `1`–`10` |
 | `reducedMotion` | boolean | `false` | `true` or `false` |
+| `contextDeferralEnabled` | boolean | `true` | `true` or `false` |
+| `busyAppIds` | string | empty | Up to 20 comma-separated exact app IDs |
 
 ### Validation
 
@@ -55,6 +57,9 @@ Example: [`contracts/settings.v1.json`](contracts/settings.v1.json)
   value while also writing both explicit fields.
 - Named presets update both work intervals, both break durations, and the
   short-cycle count together. Editing any of those fields records `custom`.
+- Busy-app IDs are lower-cased, de-duplicated, and matched exactly. Entries
+  containing anything other than letters, numbers, `.`, `_`, or `-` are
+  rejected. Window titles are never an input.
 - Unknown fields are ignored at runtime and preserved when settings are
   written, so a newer configuration is not silently destroyed.
 - Changing cadence settings applies to the next work or break phase. The
@@ -100,6 +105,10 @@ Example: [`contracts/session.v1.json`](contracts/session.v1.json)
 | `breakStartedAtEpochMs` | integer or null | Active break start time |
 | `breakDurationMs` | non-negative integer | Captured duration of the pending or active break |
 | `resumePhase` | string or null | Phase restored by `resume` from `paused` |
+| `breakDebtMs` | non-negative integer | One bounded total of postponed or skipped rest |
+| `pendingDebtRecorded` | boolean | Prevents counting the current pending break twice |
+| `contextDeferred` | boolean | A due break is waiting for the current busy context to end |
+| `manualHoldUntilEpochMs` | integer or null | Expiration of an explicit, bounded reminder hold |
 
 Only meaningful transitions persist a snapshot:
 
@@ -107,6 +116,7 @@ Only meaningful transitions persist a snapshot:
 - idle entry and return to activity;
 - warning entry, defer, and skip;
 - break start, completion, and emergency exit;
+- context deferral or release, owed-rest changes, and manual hold changes;
 - a settings change that alters the next target;
 - an orderly service shutdown.
 
@@ -139,6 +149,26 @@ An `idle` snapshot with `activeElapsedMs` equal to zero represents a natural
 break that was already satisfied while the user remained away. Recovery keeps
 that state idle without advancing the cadence again; activity must return
 before another natural break can be earned.
+
+### Busy context and owed rest
+
+The service derives one ephemeral busy decision from a bounded manual hold,
+Omarchy stay-awake mode, focused fullscreen state, or an exact current app-id
+match. Only the decision and fixed reason enum reach the engine. The current
+app ID is never written to the runtime snapshot, and no window title, media
+content, meeting content, or observation history is collected.
+
+When a break becomes due in a busy context, it remains pending and
+`contextDeferred` becomes true. Repeated observations do not add more owed
+rest. The first eligible observation starts a recovery warning of at most ten
+seconds before the break. The visible **Start now** action always bypasses the
+wait.
+
+Manual defer, automatic context defer, skip, and emergency exit add the
+current scheduled duration to the one `breakDebtMs` value unless that pending
+break was already counted. The value is capped at the larger configured break
+duration. Completed and natural rest subtract observed rest time until the
+value reaches zero. There is no debt event queue or application history.
 
 ## 4. History contract
 
@@ -189,7 +219,12 @@ Successful response:
     "breakKind": null,
     "cycleIndex": 0,
     "remainingSeconds": 900,
-    "overlayOpen": false
+    "overlayOpen": false,
+    "breakDebtSeconds": 0,
+    "contextDeferred": false,
+    "busyContext": false,
+    "busyContextReason": "",
+    "manualHoldRemainingSeconds": 0
   },
   "error": null
 }
@@ -206,7 +241,12 @@ Failed response:
     "breakKind": null,
     "cycleIndex": 0,
     "remainingSeconds": 900,
-    "overlayOpen": false
+    "overlayOpen": false,
+    "breakDebtSeconds": 0,
+    "contextDeferred": false,
+    "busyContext": false,
+    "busyContextReason": "",
+    "manualHoldRemainingSeconds": 0
   },
   "error": {
     "code": "INVALID_STATE",

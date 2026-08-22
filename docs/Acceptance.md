@@ -68,6 +68,12 @@ remains a live acceptance check.
 | Bar lifecycle | Click, summon panel when available, press Escape, use shell hide | One responsive widget per bar; close paths agree | #6 |
 | Idle boundary | Cross just below and just above the configured idle threshold | Active time pauses; only qualifying idle becomes a natural break | #5 |
 | Warning | Accelerate the work target and enter warning | Start, defer, and skip are keyboard and pointer accessible | #4 / #6 |
+| Focused fullscreen | Keep a supported fullscreen window focused until the break is due, then exit fullscreen | The break waits once, owed rest is visible, and a warning of at most 10 seconds begins after exit | #11 |
+| Stay-awake mode | Enable Omarchy stay-awake mode across a due boundary, then disable it | The pending break is retained and resumes at the next eligible observation | #11 |
+| Selected app | Add the current app ID, cross a due boundary in that app, then focus another app | Matching is exact; the due break waits only while the selected app is current | #11 |
+| Manual hold | Start and end a 30-minute hold from the panel | Remaining hold time is visible; ending it releases a pending break without clearing debt | #11 |
+| Owed-rest cap | Repeatedly defer or skip beyond the longest configured break | One value remains capped; repeated observations of the same pending break never add twice | #11 |
+| Context privacy | Inspect config, snapshot, logs, and IPC status after all context scenarios | No window title, content, observed app history, or media/call data is stored | #11 |
 | Short break | Start a short break with accelerated settings | Rotating instruction and countdown are correct; completion advances cadence | #7 / #9 |
 | Dual cadence | Apply a named preset, accelerate a short-to-long sequence, then reload | Each work target and break duration matches its type; the preset persists | #9 |
 | Long break | Complete the configured short-cycle count | Long routine and duration replace the short routine | #9 |

@@ -65,6 +65,20 @@ function workTargetMs(kind, settings) {
     : settings.shortWorkIntervalSeconds) * 1000
 }
 
+function debtCapMs(settings) {
+  return Math.max(settings.shortBreakSeconds, settings.longBreakSeconds) * 1000
+}
+
+function boundedDebtMs(value, settings) {
+  var numeric = Number.isInteger(value) ? value : 0
+  return Math.max(0, Math.min(debtCapMs(settings), numeric))
+}
+
+function recordPendingDebt(state, settings) {
+  if (state.pendingDebtRecorded === true) return boundedDebtMs(state.breakDebtMs, settings)
+  return boundedDebtMs((state.breakDebtMs || 0) + state.breakDurationMs, settings)
+}
+
 function createState(now, rawSettings) {
   var settings = normalizeSettings(rawSettings)
   var timestamp = isFiniteNumber(now) && now >= 0 ? Math.floor(now) : 0
@@ -83,7 +97,11 @@ function createState(now, rawSettings) {
     deferredUntilEpochMs: null,
     breakStartedAtEpochMs: null,
     breakDurationMs: 0,
-    resumePhase: null
+    resumePhase: null,
+    breakDebtMs: 0,
+    pendingDebtRecorded: false,
+    contextDeferred: false,
+    manualHoldUntilEpochMs: null
   }
 }
 
@@ -159,11 +177,15 @@ function publicState(state, now, rawSettings) {
     breakKind: state.breakKind,
     cycleIndex: state.cycleIndex,
     remainingSeconds: Math.ceil(remaining / 1000),
-    paused: state.phase === "paused"
+    paused: state.phase === "paused",
+    breakDebtSeconds: Math.ceil(boundedDebtMs(state.breakDebtMs, settings) / 1000),
+    contextDeferred: state.contextDeferred === true,
+    manualHoldRemainingSeconds: Math.ceil(Math.max(0,
+      (state.manualHoldUntilEpochMs || timestamp) - timestamp) / 1000)
   }
 }
 
-function freshActive(state, now, settings, cycleIndex, effects) {
+function freshActive(state, now, settings, cycleIndex, effects, nextDebtMs) {
   var kind = breakKindForCycle(cycleIndex, settings)
   var next = changedState(state, now, "active", {
     activeElapsedMs: 0,
@@ -175,7 +197,13 @@ function freshActive(state, now, settings, cycleIndex, effects) {
     deferredUntilEpochMs: null,
     breakStartedAtEpochMs: null,
     breakDurationMs: breakDurationMs(kind, settings),
-    resumePhase: null
+    resumePhase: null,
+    breakDebtMs: boundedDebtMs(
+      nextDebtMs === undefined ? state.breakDebtMs : nextDebtMs,
+      settings
+    ),
+    pendingDebtRecorded: false,
+    contextDeferred: false
   })
   return success(next, true, effects)
 }
@@ -202,7 +230,10 @@ function freshIdle(state, now, settings, effects, actualDurationMs) {
     deferredUntilEpochMs: null,
     breakStartedAtEpochMs: null,
     breakDurationMs: breakDurationMs(kind, settings),
-    resumePhase: null
+    resumePhase: null,
+    breakDebtMs: boundedDebtMs((state.breakDebtMs || 0) - actualDurationMs, settings),
+    pendingDebtRecorded: false,
+    contextDeferred: false
   })
   var allEffects = effects ? effects.slice() : []
   allEffects.push(effect)
@@ -223,7 +254,16 @@ function finishBreakCycle(state, now, settings, type, details) {
   }
   var values = details || {}
   for (var key in values) effect[key] = values[key]
-  return freshActive(state, now, settings, nextCycle(state, settings), [effect])
+  var nextDebt = boundedDebtMs(state.breakDebtMs, settings)
+  if (type === "break-completed" || type === "break-natural") {
+    var credit = Number.isInteger(values.actualDurationMs)
+      ? values.actualDurationMs : state.breakDurationMs
+    nextDebt = boundedDebtMs(nextDebt - Math.max(0, credit), settings)
+  } else if (type === "break-skipped" || type === "break-emergency-exit") {
+    nextDebt = recordPendingDebt(state, settings)
+  }
+  effect.breakDebtMs = nextDebt
+  return freshActive(state, now, settings, nextCycle(state, settings), [effect], nextDebt)
 }
 
 function beginBreak(state, now, settings, requestedKind) {
@@ -244,13 +284,49 @@ function beginBreak(state, now, settings, requestedKind) {
     deferredUntilEpochMs: null,
     breakStartedAtEpochMs: now,
     breakDurationMs: duration,
-    resumePhase: null
+    resumePhase: null,
+    contextDeferred: false
   })
   return success(next, true, [{
     type: "break-started",
     atEpochMs: now,
     breakKind: kind,
     scheduledDurationMs: duration
+  }])
+}
+
+function deferForContext(state, now, settings) {
+  var nextDebt = recordPendingDebt(state, settings)
+  var next = changedState(state, now, "warning", {
+    activeElapsedMs: Math.min(activeElapsedMs(state, now), state.workTargetMs),
+    activeStartedAtEpochMs: null,
+    warningStartedAtEpochMs: state.warningStartedAtEpochMs || now,
+    deferredUntilEpochMs: null,
+    contextDeferred: true,
+    pendingDebtRecorded: true,
+    breakDebtMs: nextDebt
+  })
+  return success(next, true, [{
+    type: "break-context-deferred",
+    atEpochMs: now,
+    breakKind: state.breakKind,
+    breakDebtMs: nextDebt
+  }])
+}
+
+function resumeAfterContext(state, now, settings) {
+  var warningMs = settings.warningSeconds * 1000
+  var recoveryMs = Math.min(warningMs, 10000)
+  if (recoveryMs === 0) return beginBreak(state, now, settings)
+  var next = changedState(state, now, "warning", {
+    warningStartedAtEpochMs: now - (warningMs - recoveryMs),
+    contextDeferred: false
+  })
+  return success(next, true, [{
+    type: "break-context-available",
+    atEpochMs: now,
+    breakKind: state.breakKind,
+    warningSeconds: recoveryMs / 1000
   }])
 }
 
@@ -314,6 +390,24 @@ function transition(inputState, event, now, rawSettings) {
     return success(changedState(state, now, resumePhase, resumePatch), true)
   }
 
+  if (type === "holdContext") {
+    if (state.phase === "stopped" || state.phase === "break")
+      return failure(state, "INVALID_STATE", "Reminder hold is unavailable during " + state.phase)
+    var holdSeconds = event.seconds === undefined ? 1800 : event.seconds
+    if (!Number.isInteger(holdSeconds) || holdSeconds < 300 || holdSeconds > 7200)
+      return failure(state, "INVALID_ARGUMENT", "Reminder hold must be from 300 to 7200 seconds")
+    return success(changedState(state, now, state.phase, {
+      manualHoldUntilEpochMs: now + holdSeconds * 1000
+    }), true, [{ type: "context-hold-started", atEpochMs: now, seconds: holdSeconds }])
+  }
+
+  if (type === "clearContextHold") {
+    if (state.manualHoldUntilEpochMs === null) return success(state, false)
+    return success(changedState(state, now, state.phase, {
+      manualHoldUntilEpochMs: null
+    }), true, [{ type: "context-hold-cleared", atEpochMs: now }])
+  }
+
   if (type === "enterIdle") {
     if (state.phase === "idle") return success(state, false)
     if (state.phase !== "active") return failure(state, "INVALID_STATE", "Idle entry requires active work")
@@ -339,10 +433,20 @@ function transition(inputState, event, now, rawSettings) {
     var seconds = event.seconds === undefined ? settings.snoozeSeconds : event.seconds
     if (!Number.isInteger(seconds) || seconds < 60 || seconds > 1800)
       return failure(state, "INVALID_ARGUMENT", "Snooze seconds must be an integer from 60 to 1800")
+    var snoozeDebt = recordPendingDebt(state, settings)
     return success(changedState(state, now, "deferred", {
       warningStartedAtEpochMs: null,
-      deferredUntilEpochMs: now + seconds * 1000
-    }), true, [{ type: "break-deferred", atEpochMs: now, breakKind: state.breakKind, seconds: seconds }])
+      deferredUntilEpochMs: now + seconds * 1000,
+      breakDebtMs: snoozeDebt,
+      pendingDebtRecorded: true,
+      contextDeferred: false
+    }), true, [{
+      type: "break-deferred",
+      atEpochMs: now,
+      breakKind: state.breakKind,
+      seconds: seconds,
+      breakDebtMs: snoozeDebt
+    }])
   }
 
   if (type === "skip") {
@@ -392,7 +496,10 @@ function transition(inputState, event, now, rawSettings) {
   if (type === "tick") {
     if (state.phase === "active") {
       var elapsed = activeElapsedMs(state, now)
-      if (elapsed >= state.workTargetMs) return beginBreak(state, now, settings)
+      if (elapsed >= state.workTargetMs) {
+        if (event.busyContext === true) return deferForContext(state, now, settings)
+        return beginBreak(state, now, settings)
+      }
 
       var warningMs = Math.min(settings.warningSeconds * 1000, state.workTargetMs)
       var warningAt = state.workTargetMs - warningMs
@@ -408,8 +515,14 @@ function transition(inputState, event, now, rawSettings) {
     }
 
     if (state.phase === "warning") {
-      if (now - state.warningStartedAtEpochMs >= settings.warningSeconds * 1000)
+      if (state.contextDeferred === true) {
+        if (event.busyContext === true) return success(state, false)
+        return resumeAfterContext(state, now, settings)
+      }
+      if (now - state.warningStartedAtEpochMs >= settings.warningSeconds * 1000) {
+        if (event.busyContext === true) return deferForContext(state, now, settings)
         return beginBreak(state, now, settings)
+      }
       return success(state, false)
     }
 
@@ -460,6 +573,15 @@ function snapshotState(inputState, now) {
   return state
 }
 
+function stateWithAdditiveDefaults(inputState) {
+  var state = clone(inputState)
+  if (state.breakDebtMs === undefined) state.breakDebtMs = 0
+  if (state.pendingDebtRecorded === undefined) state.pendingDebtRecorded = false
+  if (state.contextDeferred === undefined) state.contextDeferred = false
+  if (state.manualHoldUntilEpochMs === undefined) state.manualHoldUntilEpochMs = null
+  return state
+}
+
 function validSnapshot(snapshot) {
   if (!isObject(snapshot) || snapshot.schemaVersion !== 1) return false
   if (PHASES.indexOf(snapshot.phase) === -1) return false
@@ -472,6 +594,13 @@ function validSnapshot(snapshot) {
   if (snapshot.breakKind !== null && BREAK_KINDS.indexOf(snapshot.breakKind) === -1) return false
   if (!Number.isInteger(snapshot.cycleIndex) || snapshot.cycleIndex < 0) return false
   if (!Number.isInteger(snapshot.breakDurationMs) || snapshot.breakDurationMs < 0) return false
+  if (!Number.isInteger(snapshot.breakDebtMs) || snapshot.breakDebtMs < 0 ||
+      snapshot.breakDebtMs > 3600000) return false
+  if (typeof snapshot.pendingDebtRecorded !== "boolean") return false
+  if (typeof snapshot.contextDeferred !== "boolean") return false
+  if (snapshot.contextDeferred && !snapshot.pendingDebtRecorded) return false
+  if (snapshot.manualHoldUntilEpochMs !== null &&
+      (!Number.isInteger(snapshot.manualHoldUntilEpochMs) || snapshot.manualHoldUntilEpochMs < 0)) return false
   if (snapshot.activeStartedAtEpochMs !== null &&
       (!Number.isInteger(snapshot.activeStartedAtEpochMs) || snapshot.activeStartedAtEpochMs < 0 ||
        snapshot.activeStartedAtEpochMs > snapshot.savedAtEpochMs)) return false
@@ -490,18 +619,21 @@ function validSnapshot(snapshot) {
       snapshot.activeStartedAtEpochMs === null &&
       snapshot.warningStartedAtEpochMs === null && snapshot.deferredUntilEpochMs === null &&
       snapshot.breakStartedAtEpochMs === null && snapshot.breakDurationMs === 0 &&
-      snapshot.resumePhase === null
+      snapshot.resumePhase === null && snapshot.breakDebtMs === 0 &&
+      snapshot.pendingDebtRecorded === false && snapshot.contextDeferred === false &&
+      snapshot.manualHoldUntilEpochMs === null
   }
 
   if (BREAK_KINDS.indexOf(snapshot.breakKind) === -1 || snapshot.breakDurationMs <= 0) return false
   if (snapshot.phase === "active")
     return Number.isInteger(snapshot.activeStartedAtEpochMs) &&
       snapshot.warningStartedAtEpochMs === null && snapshot.deferredUntilEpochMs === null &&
-      snapshot.breakStartedAtEpochMs === null && snapshot.resumePhase === null
+      snapshot.breakStartedAtEpochMs === null && snapshot.resumePhase === null &&
+      snapshot.contextDeferred === false
   if (snapshot.phase === "idle")
     return snapshot.activeStartedAtEpochMs === null && snapshot.warningStartedAtEpochMs === null &&
       snapshot.deferredUntilEpochMs === null && snapshot.breakStartedAtEpochMs === null &&
-      snapshot.resumePhase === null
+      snapshot.resumePhase === null && snapshot.contextDeferred === false
   if (snapshot.phase === "warning")
     return snapshot.activeStartedAtEpochMs === null &&
       Number.isInteger(snapshot.warningStartedAtEpochMs) && snapshot.deferredUntilEpochMs === null &&
@@ -509,11 +641,11 @@ function validSnapshot(snapshot) {
   if (snapshot.phase === "deferred")
     return snapshot.activeStartedAtEpochMs === null && snapshot.warningStartedAtEpochMs === null &&
       Number.isInteger(snapshot.deferredUntilEpochMs) && snapshot.breakStartedAtEpochMs === null &&
-      snapshot.resumePhase === null
+      snapshot.resumePhase === null && snapshot.contextDeferred === false
   if (snapshot.phase === "break")
     return snapshot.activeStartedAtEpochMs === null && snapshot.warningStartedAtEpochMs === null &&
       snapshot.deferredUntilEpochMs === null && Number.isInteger(snapshot.breakStartedAtEpochMs) &&
-      snapshot.resumePhase === null
+      snapshot.resumePhase === null && snapshot.contextDeferred === false
   if (snapshot.phase === "paused")
     return snapshot.activeStartedAtEpochMs === null && snapshot.breakStartedAtEpochMs === null &&
       ["active", "idle", "warning", "deferred"].indexOf(snapshot.resumePhase) !== -1 &&
@@ -538,14 +670,15 @@ function restoreState(snapshot, now, rawSettings) {
   var settings = normalizeSettings(rawSettings)
   if (!Number.isInteger(now) || now < 0)
     return recoveryFailure(0, settings, "INVALID_SNAPSHOT", "Restore time is invalid")
-  if (!validSnapshot(snapshot))
+  var normalizedSnapshot = isObject(snapshot) ? stateWithAdditiveDefaults(snapshot) : snapshot
+  if (!validSnapshot(normalizedSnapshot))
     return recoveryFailure(now, settings, "INVALID_SNAPSHOT", "Snapshot shape is invalid")
-  if (snapshot.savedAtEpochMs > now + 300000)
+  if (normalizedSnapshot.savedAtEpochMs > now + 300000)
     return recoveryFailure(now, settings, "FUTURE_SNAPSHOT", "Snapshot is from the future")
-  if (now - snapshot.savedAtEpochMs > 43200000)
+  if (now - normalizedSnapshot.savedAtEpochMs > 43200000)
     return recoveryFailure(now, settings, "STALE_SNAPSHOT", "Snapshot is older than 12 hours")
 
-  var state = clone(snapshot)
+  var state = clone(normalizedSnapshot)
   var downtime = Math.max(0, now - state.savedAtEpochMs)
 
   if (state.phase === "paused" || state.phase === "stopped") return success(state, false)
@@ -562,6 +695,7 @@ function restoreState(snapshot, now, rawSettings) {
   }
 
   if (state.phase === "warning") {
+    if (state.contextDeferred === true) return success(state, false)
     var warningStart = state.warningStartedAtEpochMs
     if (!isFiniteNumber(warningStart) || now - warningStart >= settings.warningSeconds * 1000) {
       return success(changedState(state, now, "warning", { warningStartedAtEpochMs: now }), true)
@@ -639,6 +773,7 @@ function rebaseClock(state, context, now) {
   nextState.warningStartedAtEpochMs = shiftTimestamp(nextState.warningStartedAtEpochMs, delta)
   nextState.deferredUntilEpochMs = shiftTimestamp(nextState.deferredUntilEpochMs, delta)
   nextState.breakStartedAtEpochMs = shiftTimestamp(nextState.breakStartedAtEpochMs, delta)
+  nextState.manualHoldUntilEpochMs = shiftTimestamp(nextState.manualHoldUntilEpochMs, delta)
   nextState.savedAtEpochMs = now
   nextState.revision = state.revision + 1
 
@@ -768,6 +903,7 @@ function heartbeat(inputState, inputContext, now, rawSettings, rawOptions) {
   var expectedIntervalMs = integerSetting(options.expectedIntervalMs, 1000, 100, 60000)
   var suspensionThresholdMs = integerSetting(options.suspensionThresholdMs, 5000,
     expectedIntervalMs + 1, 300000)
+  var tickEvent = { type: "tick", busyContext: options.busyContext === true }
   var previousObserved = inputContext.lastObservedAtEpochMs
   var prepared = prepareActivityObservation(inputState, inputContext, now)
   if (!prepared.ok) return prepared
@@ -780,11 +916,11 @@ function heartbeat(inputState, inputContext, now, rawSettings, rawOptions) {
     beginObservedIdle(prepared, now, idleSince, settings)
     endObservedIdle(prepared, now, settings)
     if (prepared.state.phase === "break")
-      appendTransition(prepared, transition(prepared.state, { type: "tick" }, now, settings))
+      appendTransition(prepared, transition(prepared.state, tickEvent, now, settings))
     prepared.effects.unshift({ type: "activity-gap", atEpochMs: now, durationMs: now - idleSince })
   } else if (prepared.context.isIdle) {
     if (prepared.state.phase === "break") {
-      appendTransition(prepared, transition(prepared.state, { type: "tick" }, now, settings))
+      appendTransition(prepared, transition(prepared.state, tickEvent, now, settings))
       if (prepared.state.phase === "active") {
         appendTransition(prepared, transition(prepared.state, {
           type: "enterIdle",
@@ -795,7 +931,7 @@ function heartbeat(inputState, inputContext, now, rawSettings, rawOptions) {
       satisfyNaturalBreak(prepared, now, settings)
     }
   } else {
-    appendTransition(prepared, transition(prepared.state, { type: "tick" }, now, settings))
+    appendTransition(prepared, transition(prepared.state, tickEvent, now, settings))
   }
 
   prepared.context.lastObservedAtEpochMs = now

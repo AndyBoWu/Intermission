@@ -48,6 +48,8 @@ configuration is overwritten without the normal Omarchy enable/save flow.
   Escape for the configured safety interval to exit.
 - Qualifying idle time can satisfy a pending break without showing a stale
   overlay when activity resumes.
+- A due break can wait through stay-awake mode, focused fullscreen work, or an
+  app ID you explicitly select. The bar keeps postponed rest visible.
 
 ## Configure
 
@@ -69,9 +71,18 @@ Defaults:
 | Quick defer | 5 minutes |
 | Natural-break idle threshold | 2 minutes |
 | Escape hold | 3 seconds |
+| Busy-context deferral | On |
+| Protected app IDs | None |
 
 Reduced motion removes Intermission's progress transition. The interface uses
 the active Omarchy theme and keeps pointer and keyboard controls available.
+
+Smart timing uses only current local signals. You can disable automatic
+context deferral, add the current app ID to an exact-match list, edit or clear
+that list, hold reminders for 30 minutes, end the hold early, or choose
+**Start now** to take a pending break immediately. A busy context never
+discards a break: one bounded owed-rest value remains visible until real or
+natural rest pays it down.
 
 The complete field ranges and migration behavior are in
 [Runtime and IPC Contracts](docs/Contracts.md).
@@ -85,10 +96,13 @@ Intermission:
 - does not send telemetry or make runtime network requests;
 - does not record window titles, typed content, screenshots, audio, camera
   input, or browsing history;
+- reads only the current fullscreen flag, Omarchy stay-awake flag, and current
+  app ID for an in-memory exact match; it stores the allowlist but not observed
+  app IDs or an observation history;
 - does not install a system service or request elevated privileges.
 
-The runtime snapshot contains only cadence state and timestamps. Its default
-location is:
+The runtime snapshot contains cadence state, timestamps, one bounded owed-rest
+value, and an optional manual-hold deadline. Its default location is:
 
 ```text
 ${XDG_STATE_HOME:-~/.local/state}/intermission/session.json

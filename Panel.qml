@@ -18,11 +18,21 @@ Panel {
   readonly property var barIdentity: hostWidget || root
   readonly property var state: service && service.ready
     ? service.publicState
-    : ({ phase: "stopped", breakKind: null, cycleIndex: 0, remainingSeconds: 0, paused: false })
+    : ({
+        phase: "stopped",
+        breakKind: null,
+        cycleIndex: 0,
+        remainingSeconds: 0,
+        paused: false,
+        breakDebtSeconds: 0,
+        contextDeferred: false,
+        manualHoldRemainingSeconds: 0
+      })
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
 
   function phaseLabel() {
+    if (state.contextDeferred) return "Break waiting"
     if (state.phase === "active") return "Active"
     if (state.phase === "idle") return "Idle"
     if (state.phase === "warning") return "Break soon"
@@ -30,6 +40,26 @@ Panel {
     if (state.phase === "break") return state.breakKind === "long" ? "Long break" : "Short break"
     if (state.phase === "paused") return "Paused"
     return "Stopped"
+  }
+
+  function contextSummary() {
+    if (state.contextDeferred) {
+      var reason = service ? service.busyContextReason : "busy context"
+      return "A due break is waiting for " + (reason || "the current context") + " to end."
+    }
+    if (state.manualHoldRemainingSeconds > 0)
+      return "Manual hold · " + formatRemaining(state.manualHoldRemainingSeconds) + " remaining"
+    if (service && service.busyContext)
+      return "Ready to defer for " + service.busyContextReason + "."
+    return "No busy context detected."
+  }
+
+  function addCurrentApp() {
+    if (!root.service || root.service.currentAppId === "") return
+    root.setFormValue("busyAppIds", Settings.addAppId(
+      root.form.busyAppIds,
+      root.service.currentAppId
+    ))
   }
 
   function formatRemaining(seconds) {
@@ -187,7 +217,9 @@ Panel {
               }
 
               Text {
-                text: root.phaseLabel() + (root.service && root.service.isIdle ? " · away" : "")
+                text: root.phaseLabel() + (root.service && root.service.isIdle ? " · away" : "") +
+                  (root.state.breakDebtSeconds > 0
+                    ? " · owed " + root.formatRemaining(root.state.breakDebtSeconds) : "")
                 color: root.contentForeground
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.body
@@ -200,7 +232,9 @@ Panel {
               id: countdown
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              text: root.state.phase === "stopped" ? "—" : root.formatRemaining(root.state.remainingSeconds)
+              text: root.state.phase === "stopped" ? "—"
+                : root.state.contextDeferred ? "waiting"
+                : root.formatRemaining(root.state.remainingSeconds)
               color: root.contentForeground
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.displayLarge
@@ -316,6 +350,135 @@ Panel {
               Accessible.description: "Complete the current break"
               Accessible.onPressAction: if (enabled && root.service) root.service.completeBreak("panel")
               onClicked: if (root.service) root.service.completeBreak("panel")
+            }
+          }
+
+          PanelSeparator { foreground: root.contentForeground }
+          PanelSectionHeader {
+            text: "SMART TIMING"
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+          }
+
+          Text {
+            width: parent.width
+            text: root.contextSummary()
+            color: root.contentForeground
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
+          }
+
+          Toggle {
+            width: parent.width
+            label: "Defer during busy contexts"
+            description: "Wait during fullscreen, stay-awake mode, or an exact app-id match."
+            checked: root.form.contextDeferralEnabled
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: label
+            Accessible.description: description
+            Accessible.checkable: true
+            Accessible.checked: checked
+            Accessible.onPressAction: if (enabled) root.setFormValue(
+              "contextDeferralEnabled",
+              !root.form.contextDeferralEnabled
+            )
+            Accessible.onToggleAction: if (enabled) root.setFormValue(
+              "contextDeferralEnabled",
+              !root.form.contextDeferralEnabled
+            )
+            onClicked: root.setFormValue(
+              "contextDeferralEnabled",
+              !root.form.contextDeferralEnabled
+            )
+          }
+
+          Text {
+            width: parent.width
+            text: "Exact app IDs to protect (comma separated)"
+            color: root.contentForeground
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          TextField {
+            id: busyAppsField
+            width: parent.width
+            text: root.form.busyAppIds
+            placeholderText: "org.example.slides, firefox"
+            foreground: root.contentForeground
+            Accessible.name: "Busy-context app IDs"
+            Accessible.description: "Exact app IDs only; titles and content are never inspected"
+            onEditingFinished: root.setFormValue("busyAppIds", text)
+          }
+
+          Row {
+            width: parent.width
+            spacing: Style.space(8)
+
+            Button {
+              text: "Add current app"
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              bordered: true
+              focusable: true
+              enabled: root.service && root.service.currentAppId !== ""
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Add the current app ID without reading its window title"
+              Accessible.onPressAction: if (enabled) root.addCurrentApp()
+              onClicked: root.addCurrentApp()
+            }
+
+            Button {
+              text: "Clear app list"
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              bordered: true
+              focusable: true
+              enabled: String(root.form.busyAppIds || "") !== ""
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.onPressAction: if (enabled) root.setFormValue("busyAppIds", "")
+              onClicked: root.setFormValue("busyAppIds", "")
+            }
+          }
+
+          Row {
+            width: parent.width
+            spacing: Style.space(8)
+
+            Button {
+              visible: root.state.manualHoldRemainingSeconds <= 0
+              enabled: root.state.phase !== "stopped" && root.state.phase !== "break"
+              text: "Hold for 30 min"
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              bordered: true
+              focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Temporarily hold due reminders for thirty minutes"
+              Accessible.onPressAction: if (enabled && root.service) root.service.holdReminders(1800)
+              onClicked: if (root.service) root.service.holdReminders(1800)
+            }
+
+            Button {
+              visible: root.state.manualHoldRemainingSeconds > 0
+              text: "End manual hold"
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              bordered: true
+              focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.description: "Return to automatic context timing now"
+              Accessible.onPressAction: if (enabled && root.service) root.service.clearReminderHold()
+              onClicked: if (root.service) root.service.clearReminderHold()
             }
           }
 

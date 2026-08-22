@@ -12,12 +12,22 @@ BarWidget {
     : null
   readonly property var state: intermissionService && intermissionService.ready
     ? intermissionService.publicState
-    : ({ phase: "stopped", breakKind: null, cycleIndex: 0, remainingSeconds: 0, paused: false })
+    : ({
+        phase: "stopped",
+        breakKind: null,
+        cycleIndex: 0,
+        remainingSeconds: 0,
+        paused: false,
+        breakDebtSeconds: 0,
+        contextDeferred: false,
+        manualHoldRemainingSeconds: 0
+      })
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item
     ? panelLoader.item.popoutSwitchClosing === true : false
 
   function phaseLabel(phase) {
+    if (state.contextDeferred) return "Break waiting"
     if (phase === "active") return "Active"
     if (phase === "idle") return "Idle"
     if (phase === "warning") return "Break soon"
@@ -105,13 +115,25 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: root.vertical
-      ? root.phaseIcon(root.state.phase) + "\n" + root.formatRemaining(root.state.remainingSeconds, true)
+      ? root.phaseIcon(root.state.phase) + "\n" +
+        (root.state.contextDeferred
+          ? "waiting"
+          : root.state.breakDebtSeconds > 0
+          ? "owed " + root.formatRemaining(root.state.breakDebtSeconds, true)
+          : root.formatRemaining(root.state.remainingSeconds, true))
       : root.phaseIcon(root.state.phase) + "  " + root.phaseLabel(root.state.phase) +
-        (root.state.phase === "stopped" ? "" : " · " + root.formatRemaining(root.state.remainingSeconds, false))
+        (root.state.phase === "stopped" || root.state.contextDeferred
+          ? "" : " · " + root.formatRemaining(root.state.remainingSeconds, false)) +
+        (root.state.breakDebtSeconds > 0
+          ? " · owed " + root.formatRemaining(root.state.breakDebtSeconds, false) : "")
     fixedHeight: root.vertical ? Style.bar.iconSlot * 2 : -1
     tooltipText: "Intermission — " + root.phaseLabel(root.state.phase) +
-      (root.state.phase === "stopped" ? "" : " — " + root.formatRemaining(root.state.remainingSeconds, false))
-    active: root.state.phase === "warning" || root.state.phase === "break" || root.opened
+      (root.state.phase === "stopped" || root.state.contextDeferred
+        ? "" : " — " + root.formatRemaining(root.state.remainingSeconds, false)) +
+      (root.state.breakDebtSeconds > 0
+        ? " — owed rest " + root.formatRemaining(root.state.breakDebtSeconds, false) : "")
+    active: root.state.phase === "warning" || root.state.phase === "break" ||
+      root.state.breakDebtSeconds > 0 || root.opened
     enabled: root.intermissionService && root.intermissionService.ready
     activeFocusOnTab: enabled
     Accessible.role: Accessible.Button

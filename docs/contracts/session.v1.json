@@ -13,5 +13,9 @@
   "deferredUntilEpochMs": null,
   "breakStartedAtEpochMs": null,
   "breakDurationMs": 20000,
-  "resumePhase": null
+  "resumePhase": null,
+  "breakDebtMs": 0,
+  "pendingDebtRecorded": false,
+  "contextDeferred": false,
+  "manualHoldUntilEpochMs": null
 }
