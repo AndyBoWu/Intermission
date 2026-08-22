@@ -9,6 +9,7 @@
     "test:shell": "bash tests/shell/scaffold-test.sh",
     "test:live": "bash tests/shell/live-lifecycle-test.sh",
     "lint:qml": "bash tests/qml-lint.sh",
+    "test:compatibility": "bash tests/compatibility-checks.sh",
     "audit:release": "bash tests/release-audit.sh",
     "check:portable": "npm test && npm run test:static && npm run test:shell && npm run audit:release",
     "check": "npm run check:portable && npm run lint:qml"
