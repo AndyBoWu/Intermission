@@ -16,6 +16,7 @@ done
 
 for required_path in \
   manifest.json README.md LICENSE preview.png \
+  scripts/release-assets.sh scripts/release-files.txt docs/Releasing.md \
   docs/ReleaseEvidence.md docs/MarketplaceChecklist.md \
   docs/previews/intermission-preview.svg \
   docs/previews/multi-display-preview.svg \

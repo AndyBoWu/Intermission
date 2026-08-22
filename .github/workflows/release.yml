@@ -1,0 +1,193 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Strict semantic tag to validate without publishing
+        required: true
+        default: v0.1.0
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  assets:
+    name: Release / Portable assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install portable check tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes jq ripgrep shellcheck
+
+      - name: Run portable release gates
+        run: npm run check:portable
+
+      - name: Build and verify deterministic assets
+        run: bash scripts/release-assets.sh build "$RELEASE_TAG" dist "$GITHUB_SHA"
+
+      - name: Upload dry-run assets
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: intermission-release-${{ env.RELEASE_TAG }}
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Report artifact digest
+        env:
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: printf 'artifact_sha256=%s\n' "$ARTIFACT_DIGEST"
+
+  compatibility:
+    name: Release / Pinned compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: archlinux:base@sha256:4bf33b21a715aac0b48ce6e9eaed4782a898eae96f88f5da3635572129c2584a
+    defaults:
+      run:
+        shell: bash
+    env:
+      ARCHIVE_DATE: 2026/08/22
+      OMARCHY_COMMIT: eca89f9518a95fbb279fcf55567d4d6df38e6d2e
+      QMLLINT_BIN: /usr/lib/qt6/bin/qmllint
+
+    steps:
+      - name: Install the frozen compatibility toolchain
+        run: |
+          printf '%s\n' "Server = https://archive.archlinux.org/repos/$ARCHIVE_DATE/\$repo/os/\$arch" \
+            > /etc/pacman.d/mirrorlist
+          pacman -Syu --noconfirm --needed \
+            ca-certificates git jq nodejs npm qt6-declarative quickshell
+
+      - name: Check out the release commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Check out the pinned Omarchy baseline
+        run: |
+          omarchy_root="$RUNNER_TEMP/omarchy-$OMARCHY_COMMIT"
+          git init --quiet "$omarchy_root"
+          git -C "$omarchy_root" remote add origin https://github.com/basecamp/omarchy.git
+          git -C "$omarchy_root" fetch --quiet --depth=1 origin "$OMARCHY_COMMIT"
+          git -C "$omarchy_root" checkout --quiet --detach FETCH_HEAD
+          echo "OMARCHY_PATH=$omarchy_root" >> "$GITHUB_ENV"
+
+      - name: Run pinned compatibility checks
+        run: npm run test:compatibility
+
+  publish:
+    if: github.event_name == 'push'
+    name: Release / Publish
+    needs:
+      - assets
+      - compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: release
+      url: ${{ steps.publish.outputs.url }}
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download validated assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: intermission-release-${{ env.RELEASE_TAG }}
+          path: dist
+
+      - name: Re-verify tag and assets
+        run: |
+          test "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          source_commit=$(git rev-parse HEAD)
+          tag_commit=$(git rev-list -n 1 "$RELEASE_TAG")
+          test "$tag_commit" = "$source_commit"
+          git show-ref --verify --quiet refs/remotes/origin/main
+          git merge-base --is-ancestor "$tag_commit" refs/remotes/origin/main
+          bash scripts/release-assets.sh verify "$RELEASE_TAG" dist "$source_commit"
+
+      - name: Require a protected release environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          reviewer_rules=$(gh api \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$GITHUB_REPOSITORY/environments/release" \
+            --jq '[.protection_rules[] | select(.type == "required_reviewers")] | length')
+          test "$reviewer_rules" -ge 1
+
+      - name: Reject a duplicate release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if response=$(gh api --include \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" 2>&1); then
+            echo "release $RELEASE_TAG already exists" >&2
+            exit 1
+          fi
+          [[ $response == *"404 Not Found"* ]] || {
+            printf '%s\n' "$response" >&2
+            exit 1
+          }
+
+      - name: Publish exactly one GitHub Release
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=${RELEASE_TAG#v}
+          source_commit=$(git rev-parse HEAD)
+          notes=$(printf \
+            'Tested commit: %s\n\nLive-environment evidence: see docs/ReleaseEvidence.md at this commit. Marketplace submission remains a separate owner-approved action.' \
+            "$source_commit")
+          release_url=$(gh release create "$RELEASE_TAG" \
+            "dist/intermission-$version.tar.gz" \
+            "dist/intermission-$version.tar.gz.sha256" \
+            "dist/intermission-$version.provenance.json" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --generate-notes \
+            --title "Intermission $version" \
+            --notes "$notes")
+          echo "url=$release_url" >> "$GITHUB_OUTPUT"

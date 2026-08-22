@@ -409,7 +409,7 @@ acceptance or granting automation unnecessary authority.
 
 - [x] [#29 — Add deterministic pull-request CI and quality gates](https://github.com/AndyBoWu/Intermission/issues/29)
 - [x] [#30 — Automate Omarchy and QML compatibility validation](https://github.com/AndyBoWu/Intermission/issues/30)
-- [ ] [#31 — Harden GitHub Actions and automate security checks](https://github.com/AndyBoWu/Intermission/issues/31)
+- [x] [#31 — Harden GitHub Actions and automate security checks](https://github.com/AndyBoWu/Intermission/issues/31)
 - [ ] [#33 — Configure protected main-branch and CI governance](https://github.com/AndyBoWu/Intermission/issues/33)
 - [ ] [#32 — Add a gated, tag-driven GitHub release workflow](https://github.com/AndyBoWu/Intermission/issues/32)
 
