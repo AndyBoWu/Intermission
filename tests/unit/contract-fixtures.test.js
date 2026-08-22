@@ -20,16 +20,22 @@ test("settings fixture exposes the version 1 cadence defaults", () => {
   assertEqual(settings.cyclesBeforeLong, 4);
   assertEqual(settings.contextDeferralEnabled, true);
   assertEqual(settings.busyAppIds, "");
+  assertDeepEqual(settings.routineOrder, ["eyes", "stand", "stretch", "hydrate"]);
+  assertDeepEqual(settings.customBreakItems, []);
+  assertEqual(settings.workdayHoursEnabled, false);
+  assertEqual(settings.endOfDayPromptEnabled, false);
 });
 
 test("session fixture uses a supported phase and monotonic revision", () => {
   const session = fixture("session.v1.json");
-  const phases = ["stopped", "active", "idle", "warning", "deferred", "break", "paused"];
+  const phases = ["stopped", "active", "idle", "warning", "deferred", "break", "paused", "outside"];
   assertEqual(session.schemaVersion, 1);
   assert(phases.includes(session.phase), "Session phase must be supported");
   assert(Number.isInteger(session.revision) && session.revision >= 0, "Revision must be non-negative");
   assertEqual(session.breakDebtMs, 0);
   assertEqual(session.contextDeferred, false);
+  assertEqual(session.workdayOverrideActive, false);
+  assertEqual(session.endOfDayPromptPending, false);
 });
 
 test("history fixture contains only versioned event data", () => {

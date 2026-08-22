@@ -385,3 +385,159 @@ test("heartbeat carries a busy context into the due-break policy", () => {
   assertEqual(deferred.state.contextDeferred, true);
   assertEqual(deferred.state.breakDebtMs, 20 * SECOND);
 });
+
+test("heartbeat freezes outside hours and resumes without surprise debt", () => {
+  const options = settings();
+  const current = session(options);
+  const closed = Engine.heartbeat(
+    current.state,
+    current.context,
+    BASE + 50 * SECOND,
+    options,
+    {
+      remindersAllowed: false,
+      localDateKey: "2026-08-21",
+      suspensionThresholdMs: 120 * SECOND
+    }
+  );
+
+  assertEqual(closed.state.phase, "outside");
+  assertEqual(closed.state.activeElapsedMs, 50 * SECOND);
+  assertEqual(closed.state.breakDebtMs, 0);
+
+  const held = Engine.heartbeat(
+    closed.state,
+    closed.context,
+    BASE + 500 * SECOND,
+    options,
+    { remindersAllowed: false }
+  );
+  assertEqual(held.state.phase, "outside");
+  assertEqual(held.state.activeElapsedMs, 50 * SECOND);
+  assertEqual(held.state.breakDebtMs, 0);
+
+  const opened = Engine.heartbeat(
+    held.state,
+    held.context,
+    BASE + 600 * SECOND,
+    options,
+    { remindersAllowed: true }
+  );
+  assertEqual(opened.state.phase, "active");
+  assertEqual(opened.state.activeElapsedMs, 50 * SECOND);
+  assertEqual(opened.state.breakDebtMs, 0);
+});
+
+test("activity returning outside hours reopens an idle cycle as active", () => {
+  const options = settings();
+  const current = session(options);
+  const idle = Engine.activitySignal(
+    current.state,
+    current.context,
+    true,
+    BASE + 15 * SECOND,
+    5 * SECOND,
+    options
+  );
+  const closed = Engine.heartbeat(
+    idle.state,
+    idle.context,
+    BASE + 20 * SECOND,
+    options,
+    { remindersAllowed: false }
+  );
+  const activeOutside = Engine.activitySignal(
+    closed.state,
+    closed.context,
+    false,
+    BASE + 30 * SECOND,
+    5 * SECOND,
+    options
+  );
+  const opened = Engine.heartbeat(
+    activeOutside.state,
+    activeOutside.context,
+    BASE + 40 * SECOND,
+    options,
+    { remindersAllowed: true }
+  );
+
+  assertEqual(opened.context.isIdle, false);
+  assertEqual(opened.state.phase, "active");
+  assertEqual(opened.state.activeStartedAtEpochMs, BASE + 40 * SECOND);
+});
+
+test("a pending outside-hours warning waits until idle activity returns", () => {
+  const options = settings();
+  const current = session(options);
+  const warning = Engine.heartbeat(
+    current.state,
+    current.context,
+    BASE + 90 * SECOND,
+    options,
+    { suspensionThresholdMs: 120 * SECOND }
+  );
+  const closed = Engine.heartbeat(
+    warning.state,
+    warning.context,
+    BASE + 91 * SECOND,
+    options,
+    { remindersAllowed: false }
+  );
+  const idleOutside = Engine.activitySignal(
+    closed.state,
+    closed.context,
+    true,
+    BASE + 96 * SECOND,
+    5 * SECOND,
+    options
+  );
+  const opened = Engine.heartbeat(
+    idleOutside.state,
+    idleOutside.context,
+    BASE + 100 * SECOND,
+    options,
+    { remindersAllowed: true }
+  );
+
+  assertEqual(opened.state.phase, "outside");
+  assertEqual(opened.state.resumePhase, "warning");
+  assertEqual(opened.context.isIdle, true);
+
+  const returned = Engine.activitySignal(
+    opened.state,
+    opened.context,
+    false,
+    BASE + 131 * SECOND,
+    5 * SECOND,
+    options
+  );
+  assertEqual(returned.state.phase, "outside");
+  const eligible = Engine.heartbeat(
+    returned.state,
+    returned.context,
+    BASE + 131 * SECOND,
+    options,
+    { remindersAllowed: true }
+  );
+  assertEqual(eligible.state.phase, "warning");
+  assertEqual(Engine.publicState(eligible.state, BASE + 131 * SECOND, options).remainingSeconds, 10);
+});
+
+test("a cycle started outside hours freezes before active time accrues", () => {
+  const options = settings();
+  const initial = Engine.createState(BASE, options);
+  const context = Engine.createActivityContext(BASE);
+  const startedOutside = Engine.transition(initial, { type: "start" }, BASE, options);
+  const closed = Engine.heartbeat(
+    startedOutside.state,
+    context,
+    BASE,
+    options,
+    { remindersAllowed: false }
+  );
+
+  assertEqual(closed.state.phase, "outside");
+  assertEqual(closed.state.activeElapsedMs, 0);
+  assertEqual(closed.state.breakDebtMs, 0);
+});

@@ -85,6 +85,10 @@ grep -Eq 'Engine\.activitySignal' "$PROJECT_ROOT/Service.qml" \
   || fail "service must route idle signals through the pure engine"
 grep -Eq 'Engine\.heartbeat' "$PROJECT_ROOT/Service.qml" \
   || fail "service must route timer gaps through the pure engine"
+grep -Eq 'SystemClock[[:space:]]*\{' "$PROJECT_ROOT/Service.qml" \
+  || fail "workday policy must follow the live local clock"
+grep -Eq 'Date\.timeZoneUpdated' "$PROJECT_ROOT/Service.qml" \
+  || fail "workday policy must refresh after a timezone change"
 
 [[ -f $PROJECT_ROOT/Panel.qml ]] || fail "bar control panel is missing"
 grep -Eq 'Qt\.resolvedUrl\("Panel\.qml"\)' "$PROJECT_ROOT/BarWidget.qml" \
@@ -107,6 +111,14 @@ grep -Eq 'busyAppIds' "$PROJECT_ROOT/Panel.qml" \
   || fail "control panel must expose exact app-id controls"
 grep -Eq 'holdReminders\(1800\)' "$PROJECT_ROOT/Panel.qml" \
   || fail "control panel must expose a bounded manual hold"
+grep -Eq 'routineOrder' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must expose break rotation ordering"
+grep -Eq 'customBreakItems' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must expose local custom break items"
+grep -Eq 'workdayHoursByDay' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must expose daily reminder windows"
+grep -Eq 'continueWorkday\(\)' "$PROJECT_ROOT/Panel.qml" \
+  || fail "control panel must expose a reversible workday override"
 grep -Eq 'summonBarWidget' "$PROJECT_ROOT/Service.qml" \
   || fail "service showPanel must route to a live bar widget"
 grep -Eq 'function stableIpcError\(error\)' "$PROJECT_ROOT/Service.qml" \
@@ -152,5 +164,9 @@ grep -Eq 'Accessible\.role:[[:space:]]*Accessible\.ComboBox' "$PROJECT_ROOT/Pane
   || fail "cadence presets must expose an accessible selector"
 grep -Eq 'Accessible\.onIncreaseAction:.*root\.shiftPreset\(1\)' "$PROJECT_ROOT/Panel.qml" \
   || fail "cadence presets must expose accessible selection actions"
+grep -Eq 'BreakView\.presentation' "$PROJECT_ROOT/Overlay.qml" \
+  || fail "overlay must use the break presentation model"
+grep -Eq 'service[[:space:]]*\?[[:space:]]*service\.configuration' "$PROJECT_ROOT/Overlay.qml" \
+  || fail "overlay must render the configured break rotation"
 
 echo "ok - scaffold contract"

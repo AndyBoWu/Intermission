@@ -47,6 +47,11 @@ Example: [`contracts/settings.v1.json`](contracts/settings.v1.json)
 | `reducedMotion` | boolean | `false` | `true` or `false` |
 | `contextDeferralEnabled` | boolean | `true` | `true` or `false` |
 | `busyAppIds` | string | empty | Up to 20 comma-separated exact app IDs |
+| `routineOrder` | string array | four built-in IDs | Ordered, de-duplicated built-in or valid custom IDs |
+| `customBreakItems` | object array | empty | Up to 8 local `{id, label, instruction}` items |
+| `workdayHoursEnabled` | boolean | `false` | `true` or `false` |
+| `endOfDayPromptEnabled` | boolean | `false` | `true` or `false` |
+| `workdayHoursByDay` | object | weekdays `09:00-17:00`; weekends `off` | One `HH:MM-HH:MM` or `off` value for each day |
 
 ### Validation
 
@@ -60,6 +65,16 @@ Example: [`contracts/settings.v1.json`](contracts/settings.v1.json)
 - Busy-app IDs are lower-cased, de-duplicated, and matched exactly. Entries
   containing anything other than letters, numbers, `.`, `_`, or `-` are
   rejected. Window titles are never an input.
+- Built-in routine IDs are `eyes`, `stand`, `stretch`, and `hydrate`. Custom
+  IDs use `custom-` followed by lower-case letters, numbers, or hyphens. A
+  custom label is 1–32 characters and its plain-text instruction is 1–80
+  characters after whitespace normalization; control characters, incomplete
+  items, unknown IDs, and duplicates are discarded. At most eight custom
+  items are retained. An empty resulting rotation uses all four built-ins.
+- Reminder windows use local wall-clock time and are re-evaluated after clock
+  or timezone changes. Start is inclusive and end is exclusive. A start later
+  than the end crosses midnight; `00:00-24:00` covers the full day. Invalid
+  daily values safely disable that day; missing values use that day's default.
 - Unknown fields are ignored at runtime and preserved when settings are
   written, so a newer configuration is not silently destroyed.
 - Changing cadence settings applies to the next work or break phase. The
@@ -93,7 +108,7 @@ Example: [`contracts/session.v1.json`](contracts/session.v1.json)
 | `schemaVersion` | integer | Snapshot schema, currently `1` |
 | `revision` | non-negative integer | Increases on every persisted transition |
 | `savedAtEpochMs` | integer | Wall-clock time of the atomic save |
-| `phase` | string | `stopped`, `active`, `idle`, `warning`, `deferred`, `break`, or `paused` |
+| `phase` | string | `stopped`, `active`, `idle`, `warning`, `deferred`, `break`, `paused`, or `outside` |
 | `phaseEnteredAtEpochMs` | integer | Time the current phase began |
 | `activeElapsedMs` | non-negative integer | Active time already counted in this work interval |
 | `activeStartedAtEpochMs` | integer or null | Start of the current active segment |
@@ -104,11 +119,15 @@ Example: [`contracts/session.v1.json`](contracts/session.v1.json)
 | `deferredUntilEpochMs` | integer or null | Current deferral deadline |
 | `breakStartedAtEpochMs` | integer or null | Active break start time |
 | `breakDurationMs` | non-negative integer | Captured duration of the pending or active break |
-| `resumePhase` | string or null | Phase restored by `resume` from `paused` |
+| `resumePhase` | string or null | Phase restored from `paused` or `outside` |
 | `breakDebtMs` | non-negative integer | One bounded total of postponed or skipped rest |
 | `pendingDebtRecorded` | boolean | Prevents counting the current pending break twice |
 | `contextDeferred` | boolean | A due break is waiting for the current busy context to end |
 | `manualHoldUntilEpochMs` | integer or null | Expiration of an explicit, bounded reminder hold |
+| `workdayOverrideActive` | boolean | Current cycle may continue beyond configured hours |
+| `endOfDayPromptPending` | boolean | The non-blocking boundary choice is visible |
+| `lastEndOfDayPromptDateKey` | string or null | Local `YYYY-MM-DD` key used to de-duplicate a prompt |
+| `resetAtNextWorkday` | boolean | Frozen progress resets when the next allowed window opens |
 
 Only meaningful transitions persist a snapshot:
 
@@ -117,6 +136,7 @@ Only meaningful transitions persist a snapshot:
 - warning entry, defer, and skip;
 - break start, completion, and emergency exit;
 - context deferral or release, owed-rest changes, and manual hold changes;
+- workday close, open, boundary choice, or temporary override;
 - a settings change that alters the next target;
 - an orderly service shutdown.
 
@@ -137,13 +157,14 @@ Phase-specific recovery is evaluated before natural-break recovery. Only an
 | Invalid JSON or invalid field | Ignore the snapshot and start `stopped`; never open an overlay |
 | Unsupported future schema | Leave the file untouched and start `stopped` |
 | `savedAtEpochMs` more than 5 minutes in the future | Treat as a clock reversal and start `stopped` |
-| Snapshot older than 12 hours | Treat as stale and start `stopped` |
+| Snapshot older than 12 hours | Treat as stale and start `stopped`, except a valid `outside` snapshot remains frozen |
 | Active or idle snapshot whose downtime meets `naturalBreakSeconds` | Count it as a natural break and begin a fresh work interval |
 | Active or idle snapshot after shorter downtime | Restore counted active time; do not count downtime |
 | Overdue warning or deferral | Restore to `warning`; never jump directly into an overlay |
 | Active break with time remaining | Restore the break and its overlay |
 | Active break whose end passed | Complete it without reopening the overlay and begin a fresh work interval |
 | Paused snapshot | Remain paused until an explicit resume |
+| Outside-hours snapshot | Remain frozen without accruing active time or owed rest until an allowed window or explicit override |
 
 An `idle` snapshot with `activeElapsedMs` equal to zero represents a natural
 break that was already satisfied while the user remained away. Recovery keeps
@@ -169,6 +190,27 @@ current scheduled duration to the one `breakDebtMs` value unless that pending
 break was already counted. The value is capped at the larger configured break
 duration. Completed and natural rest subtract observed rest time until the
 value reaches zero. There is no debt event queue or application history.
+
+### Break rotation and workday policy
+
+The overlay derives its one instruction from `routineOrder`, the current cycle
+index, and the normalized custom items. This changes presentation only; it
+does not add task completion, content libraries, or network access.
+
+When an enabled workday window closes, `active`, `idle`, `warning`, or
+`deferred` moves to `outside` with its progress frozen. An active break is
+allowed to finish before the close is applied. Activity outside the window
+does not advance the work target and does not create owed rest. Reopening the
+window restores active or idle progress; a pending warning receives at most a
+ten-second recovery warning.
+
+The optional end-of-day prompt is non-blocking and is shown at most once per
+local date. **Wait for next window** keeps frozen progress, **Stop for today**
+resets work progress when the next allowed window opens while preserving the
+upcoming short/long cadence slot, and **Continue this cycle**
+temporarily bypasses the window until the current break cycle completes. The
+policy stores no timezone, calendar event, task, website, or application
+history and never locks the session.
 
 ## 4. History contract
 

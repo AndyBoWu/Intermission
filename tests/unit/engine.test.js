@@ -28,7 +28,7 @@ function atWarning(options = settings()) {
 }
 
 test("engine declares every planned phase", () => {
-  assertDeepEqual(Engine.PHASES, ["stopped", "active", "idle", "warning", "deferred", "break", "paused"]);
+  assertDeepEqual(Engine.PHASES, ["stopped", "active", "idle", "warning", "deferred", "break", "paused", "outside"]);
 });
 
 test("active countdown is derived without mutating persisted elapsed time", () => {
@@ -333,6 +333,166 @@ test("a bounded manual hold is persisted and can be cleared", () => {
   assertEqual(cleared.state.manualHoldUntilEpochMs, null);
 });
 
+test("workday close freezes active progress without creating owed rest", () => {
+  const options = settings();
+  const state = started(0, options);
+  const closed = Engine.transition(state, {
+    type: "closeWorkday",
+    prompt: false,
+    dateKey: "2026-08-21"
+  }, 50 * SECOND, options);
+
+  assert(closed.ok);
+  assertEqual(closed.state.phase, "outside");
+  assertEqual(closed.state.resumePhase, "active");
+  assertEqual(closed.state.activeElapsedMs, 50 * SECOND);
+  assertEqual(closed.state.breakDebtMs, 0);
+
+  const later = Engine.transition(closed.state, { type: "tick" }, 500 * SECOND, options);
+  assertEqual(later.changed, false);
+  const opened = Engine.transition(later.state, { type: "openWorkday", idle: false }, 600 * SECOND, options);
+  assertEqual(opened.state.phase, "active");
+  assertEqual(Engine.publicState(opened.state, 610 * SECOND, options).remainingSeconds, 40);
+  assertEqual(opened.state.breakDebtMs, 0);
+});
+
+test("workday close preserves a pending warning and resumes with a short warning", () => {
+  const options = settings({ warningSeconds: 30 });
+  const state = started(0, options);
+  const warning = Engine.transition(state, { type: "tick" }, 70 * SECOND, options).state;
+  const closed = Engine.transition(warning, {
+    type: "closeWorkday",
+    prompt: true,
+    dateKey: "2026-08-21"
+  }, 80 * SECOND, options);
+
+  assertEqual(closed.state.phase, "outside");
+  assertEqual(closed.state.resumePhase, "warning");
+  assertEqual(Engine.publicState(closed.state, 80 * SECOND, options).outsideResumePhase, "warning");
+  assertEqual(closed.state.endOfDayPromptPending, true);
+  assertEqual(closed.state.breakDebtMs, 0);
+
+  const opened = Engine.transition(closed.state, { type: "openWorkday", idle: false }, 200 * SECOND, options);
+  assertEqual(opened.state.phase, "warning");
+  assertEqual(Engine.publicState(opened.state, 200 * SECOND, options).remainingSeconds, 10);
+  assertEqual(opened.state.endOfDayPromptPending, false);
+});
+
+test("end-of-day prompt is once per local date and supports reversible choices", () => {
+  const options = settings();
+  const first = Engine.transition(started(0, options), {
+    type: "closeWorkday",
+    prompt: true,
+    dateKey: "2026-08-21"
+  }, 10 * SECOND, options).state;
+  assertEqual(first.endOfDayPromptPending, true);
+  assertEqual(first.lastEndOfDayPromptDateKey, "2026-08-21");
+
+  const kept = Engine.transition(first, { type: "dismissEndOfDay" }, 11 * SECOND, options).state;
+  assertEqual(kept.endOfDayPromptPending, false);
+  const override = Engine.transition(kept, { type: "continueWorkday", idle: false }, 12 * SECOND, options).state;
+  assertEqual(override.phase, "active");
+  assertEqual(override.workdayOverrideActive, true);
+
+  const cycle = Engine.transition(override, { type: "startBreak" }, 13 * SECOND, options).state;
+  const completed = Engine.transition(cycle, { type: "completeBreak" }, 33 * SECOND, options).state;
+  assertEqual(completed.workdayOverrideActive, false);
+
+  const second = Engine.transition(completed, {
+    type: "closeWorkday",
+    prompt: true,
+    dateKey: "2026-08-21"
+  }, 34 * SECOND, options).state;
+  assertEqual(second.endOfDayPromptPending, false);
+
+  const stopped = Engine.transition(second, { type: "stopForDay" }, 35 * SECOND, options).state;
+  assertEqual(stopped.phase, "outside");
+  assertEqual(stopped.activeElapsedMs, 0);
+  assertEqual(stopped.resumePhase, "active");
+  assertEqual(stopped.resetAtNextWorkday, true);
+});
+
+test("outside-hours state survives snapshot recovery", () => {
+  const options = settings();
+  const closed = Engine.transition(started(0, options), {
+    type: "closeWorkday",
+    prompt: false,
+    dateKey: "2026-08-21"
+  }, 20 * SECOND, options).state;
+  const snapshot = Engine.snapshotState(closed, 30 * SECOND);
+  const restored = Engine.restoreState(snapshot, 40 * SECOND, options);
+
+  assert(restored.ok);
+  assertEqual(restored.state.phase, "outside");
+  assertEqual(restored.state.activeElapsedMs, 20 * SECOND);
+  assertEqual(restored.state.resumePhase, "active");
+});
+
+test("outside-hours recovery remains frozen across a weekend", () => {
+  const options = settings();
+  const closed = Engine.transition(started(0, options), {
+    type: "closeWorkday",
+    prompt: false,
+    dateKey: "2026-08-21"
+  }, 20 * SECOND, options).state;
+  const snapshot = Engine.snapshotState(closed, 30 * SECOND);
+  const restored = Engine.restoreState(snapshot, 72 * 60 * 60 * SECOND, options);
+
+  assert(restored.ok);
+  assertEqual(restored.state.phase, "outside");
+  assertEqual(restored.state.activeElapsedMs, 20 * SECOND);
+  assertEqual(restored.state.breakDebtMs, 0);
+});
+
+test("stop for today resets once at the next allowed window", () => {
+  const options = settings();
+  const closed = Engine.transition(started(0, options), {
+    type: "closeWorkday",
+    prompt: true,
+    dateKey: "2026-08-21"
+  }, 20 * SECOND, options).state;
+  const stopped = Engine.transition(closed, { type: "stopForDay" }, 21 * SECOND, options).state;
+  const opened = Engine.transition(stopped, {
+    type: "openWorkday",
+    idle: false
+  }, 22 * SECOND, options);
+
+  assert(opened.ok);
+  assertEqual(opened.state.phase, "active");
+  assertEqual(opened.state.activeElapsedMs, 0);
+  assertEqual(opened.state.revision, stopped.revision + 1);
+  assertEqual(opened.state.resetAtNextWorkday, false);
+});
+
+test("stop for today preserves the upcoming cadence slot", () => {
+  const options = settings({
+    shortWorkIntervalSeconds: 100,
+    longWorkIntervalSeconds: 200,
+    cyclesBeforeLong: 2
+  });
+  let state = started(0, options);
+  state = Engine.transition(state, { type: "startBreak" }, SECOND, options).state;
+  state = Engine.transition(state, { type: "completeBreak" }, 21 * SECOND, options).state;
+  assertEqual(state.breakKind, "long");
+
+  const warning = Engine.transition(state, { type: "tick" }, 211 * SECOND, options).state;
+  const closed = Engine.transition(warning, {
+    type: "closeWorkday",
+    prompt: true,
+    dateKey: "2026-08-21"
+  }, 212 * SECOND, options).state;
+  const stopped = Engine.transition(closed, { type: "stopForDay" }, 213 * SECOND, options).state;
+  const opened = Engine.transition(stopped, {
+    type: "openWorkday",
+    idle: false
+  }, 214 * SECOND, options).state;
+
+  assertEqual(opened.activeElapsedMs, 0);
+  assertEqual(opened.cycleIndex, 1);
+  assertEqual(opened.breakKind, "long");
+  assertEqual(opened.workTargetMs, 200 * SECOND);
+});
+
 test("repeated idempotent actions do not create new revisions", () => {
   const options = settings();
   const state = started(0, options);
@@ -421,6 +581,10 @@ test("older version-one snapshots receive additive context defaults", () => {
   delete legacy.pendingDebtRecorded;
   delete legacy.contextDeferred;
   delete legacy.manualHoldUntilEpochMs;
+  delete legacy.workdayOverrideActive;
+  delete legacy.endOfDayPromptPending;
+  delete legacy.lastEndOfDayPromptDateKey;
+  delete legacy.resetAtNextWorkday;
   legacy.savedAtEpochMs = 10 * SECOND;
 
   const restored = Engine.restoreState(legacy, 20 * SECOND, options);
@@ -429,6 +593,10 @@ test("older version-one snapshots receive additive context defaults", () => {
   assertEqual(restored.state.pendingDebtRecorded, false);
   assertEqual(restored.state.contextDeferred, false);
   assertEqual(restored.state.manualHoldUntilEpochMs, null);
+  assertEqual(restored.state.workdayOverrideActive, false);
+  assertEqual(restored.state.endOfDayPromptPending, false);
+  assertEqual(restored.state.lastEndOfDayPromptDateKey, null);
+  assertEqual(restored.state.resetAtNextWorkday, false);
 });
 
 test("context deferral and owed rest survive snapshot recovery", () => {

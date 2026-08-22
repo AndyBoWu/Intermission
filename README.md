@@ -50,6 +50,11 @@ configuration is overwritten without the normal Omarchy enable/save flow.
   overlay when activity resumes.
 - A due break can wait through stay-awake mode, focused fullscreen work, or an
   app ID you explicitly select. The bar keeps postponed rest visible.
+- Break guidance can use any ordered subset of the built-in eye, standing,
+  stretching, and hydration prompts, plus up to eight concise custom items.
+- Optional local-time reminder hours freeze automatic timing outside the
+  selected window. An end-of-day prompt can wait, stop for today, or continue
+  only the current cycle.
 
 ## Configure
 
@@ -73,6 +78,10 @@ Defaults:
 | Escape hold | 3 seconds |
 | Busy-context deferral | On |
 | Protected app IDs | None |
+| Break rotation | Eyes, stand, stretch, hydrate |
+| Custom break items | None |
+| Workday reminder hours | Off |
+| End-of-day prompt | Off |
 
 Reduced motion removes Intermission's progress transition. The interface uses
 the active Omarchy theme and keeps pointer and keyboard controls available.
@@ -83,6 +92,19 @@ that list, hold reminders for 30 minutes, end the hold early, or choose
 **Start now** to take a pending break immediately. A busy context never
 discards a break: one bounded owed-rest value remains visible until real or
 natural rest pays it down.
+
+Break rotation is an ordered list of exact IDs. Removing a built-in ID excludes
+that prompt; custom items receive a visible `custom-N` ID when added. Empty or
+invalid rotations fall back to the four built-ins. Custom labels and
+instructions are plain local text with strict length limits.
+
+Workday policy uses one local-time window per weekday. Enter
+`HH:MM-HH:MM`, use `off` for a day without reminders, and use a range such as
+`22:00-06:00` for an overnight window. Outside those hours Intermission
+freezes the current automatic cycle and creates no new owed rest. **Continue
+this cycle** is a temporary override; it clears when that cycle's break ends.
+An invalid daily window saves as `off` so it cannot create an unexpected
+reminder period.
 
 The complete field ranges and migration behavior are in
 [Runtime and IPC Contracts](docs/Contracts.md).
@@ -101,6 +123,10 @@ Intermission:
   app IDs or an observation history;
 - does not install a system service or request elevated privileges.
 
+Custom instructions and reminder windows stay in that local inline
+configuration. Intermission has no task-list or calendar synchronization,
+website or app blocking, system locking, or external account integration.
+
 The runtime snapshot contains cadence state, timestamps, one bounded owed-rest
 value, and an optional manual-hold deadline. Its default location is:
 
@@ -111,8 +137,10 @@ ${XDG_STATE_HOME:-~/.local/state}/intermission/session.json
 ## Recovery
 
 Valid recent snapshots restore the active cadence without counting shell
-downtime as active use. Expired breaks complete without replaying, while
-corrupt, future, or stale snapshots recover to a safe stopped state.
+downtime as active use. An outside-hours snapshot remains frozen across long
+closed periods such as a weekend. Expired breaks complete without replaying,
+while corrupt, future, or otherwise stale snapshots recover to a safe stopped
+state.
 
 If recovery remains unexpected:
 

@@ -17,5 +17,9 @@
   "breakDebtMs": 0,
   "pendingDebtRecorded": false,
   "contextDeferred": false,
-  "manualHoldUntilEpochMs": null
+  "manualHoldUntilEpochMs": null,
+  "workdayOverrideActive": false,
+  "endOfDayPromptPending": false,
+  "lastEndOfDayPromptDateKey": null,
+  "resetAtNextWorkday": false
 }

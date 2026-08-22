@@ -33,6 +33,10 @@ Item {
   property bool snapshotWritable: true
   property bool ready: false
   property bool initialized: false
+  property var localTimeParts: Settings.localTimeParts(new Date())
+  property bool workdayObservationInitialized: false
+  property bool lastConfiguredReminderWindowOpen: true
+  property string pendingEndOfDayPromptDateKey: ""
 
   readonly property int idleDetectionSeconds: 5
   readonly property int heartbeatIntervalMs: 1000
@@ -55,6 +59,12 @@ Item {
     Number(runtimeState.manualHoldUntilEpochMs) > displayNowEpochMs
   readonly property bool busyContext: busyContextAt(displayNowEpochMs)
   readonly property string busyContextReason: contextReasonAt(displayNowEpochMs)
+  readonly property bool configuredReminderWindowOpen: Settings.reminderAllowedAt(
+    configuration,
+    localTimeParts
+  )
+  readonly property bool reminderWindowOpen: configuredReminderWindowOpen ||
+    (runtimeState && runtimeState.workdayOverrideActive === true)
 
   function automaticContextBusy() {
     return root.configuration.contextDeferralEnabled === true &&
@@ -73,6 +83,13 @@ Item {
     if (root.fullscreenContext) return "fullscreen"
     if (root.allowlistedContext) return "selected app"
     return ""
+  }
+
+  function refreshLocalTime(dateValue) {
+    var timestamp = dateValue instanceof Date ? dateValue.getTime() : Date.now()
+    if (typeof Date.timeZoneUpdated === "function") Date.timeZoneUpdated()
+    var date = new Date(timestamp)
+    root.localTimeParts = Settings.localTimeParts(date)
   }
 
   function effectNamed(effects, name) {
@@ -112,6 +129,7 @@ Item {
     if (result.changed === true) root.persistSnapshot()
 
     var effects = result.effects || []
+    if (root.effectNamed(effects, "end-of-day-prompt")) Qt.callLater(root.showPanel)
     if (root.runtimeState.phase === "break" &&
         (root.effectNamed(effects, "break-started") || root.effectNamed(effects, "restore-overlay"))) {
       Qt.callLater(root.openOverlay)
@@ -166,6 +184,16 @@ Item {
   }
 
   function observe(now) {
+    if (root.workdayObservationInitialized && root.lastConfiguredReminderWindowOpen &&
+        !root.configuredReminderWindowOpen &&
+        root.configuration.endOfDayPromptEnabled === true &&
+        ["active", "idle", "warning", "deferred", "break"].indexOf(
+          root.runtimeState.phase
+        ) !== -1)
+      root.pendingEndOfDayPromptDateKey = root.localTimeParts.dateKey
+    if (root.configuredReminderWindowOpen ||
+        root.configuration.endOfDayPromptEnabled !== true)
+      root.pendingEndOfDayPromptDateKey = ""
     var result = Engine.heartbeat(
       root.runtimeState,
       root.activityContext,
@@ -174,11 +202,18 @@ Item {
       {
         expectedIntervalMs: root.heartbeatIntervalMs,
         suspensionThresholdMs: root.suspensionThresholdMs,
-        busyContext: root.busyContextAt(now)
+        busyContext: root.busyContextAt(now),
+        remindersAllowed: root.reminderWindowOpen,
+        endOfDayPrompt: root.pendingEndOfDayPromptDateKey !== "",
+        localDateKey: root.pendingEndOfDayPromptDateKey || root.localTimeParts.dateKey
       }
     )
     root.displayNowEpochMs = now
-    return root.applyActivityResult(result)
+    var applied = root.applyActivityResult(result)
+    if (root.runtimeState.phase === "outside") root.pendingEndOfDayPromptDateKey = ""
+    root.lastConfiguredReminderWindowOpen = root.configuredReminderWindowOpen
+    root.workdayObservationInitialized = true
+    return applied
   }
 
   function dispatch(event) {
@@ -193,9 +228,9 @@ Item {
         type: "enterIdle",
         startedAtEpochMs: now
       }, now, root.settings)
-      return root.applyTransitionResult(result)
+      if (!root.applyTransitionResult(result)) return false
     }
-    return true
+    return root.observe(now)
   }
 
   function handleIdleChanged() {
@@ -210,7 +245,7 @@ Item {
       root.settings
     )
     root.displayNowEpochMs = now
-    root.applyActivityResult(result)
+    if (root.applyActivityResult(result)) root.observe(now)
   }
 
   function inlineSettings() {
@@ -220,6 +255,8 @@ Item {
 
   function updateSettings(rawSettings) {
     var normalized = Settings.normalize(rawSettings)
+    root.workdayObservationInitialized = false
+    root.pendingEndOfDayPromptDateKey = ""
     root.configuration = normalized
     root.autoStart = normalized.autoStart
     root.settings = Engine.normalizeSettings(normalized)
@@ -286,6 +323,15 @@ Item {
   function clearReminderHold() {
     return root.dispatch({ type: "clearContextHold" })
   }
+  function continueWorkday() {
+    return root.dispatch({ type: "continueWorkday", idle: root.isIdle })
+  }
+  function dismissEndOfDay() {
+    return root.dispatch({ type: "dismissEndOfDay" })
+  }
+  function stopForDay() {
+    return root.dispatch({ type: "stopForDay" })
+  }
 
   function showPanel() {
     return !!(root.shell && root.shell.bar &&
@@ -325,7 +371,11 @@ Item {
         contextDeferred: projected.contextDeferred,
         busyContext: root.busyContext,
         busyContextReason: root.busyContextReason,
-        manualHoldRemainingSeconds: projected.manualHoldRemainingSeconds
+        manualHoldRemainingSeconds: projected.manualHoldRemainingSeconds,
+        outsideHours: projected.outsideHours,
+        outsideResumePhase: projected.outsideResumePhase,
+        workdayOverrideActive: projected.workdayOverrideActive,
+        endOfDayPromptPending: projected.endOfDayPromptPending
       },
       error: error || null
     })
@@ -444,7 +494,17 @@ Item {
     onTriggered: root.observe(Date.now())
   }
 
+  SystemClock {
+    id: localClock
+    precision: SystemClock.Minutes
+    onDateChanged: root.refreshLocalTime(date)
+  }
+
   onBusyContextChanged: {
+    if (root.ready) Qt.callLater(function() { root.observe(Date.now()) })
+  }
+
+  onConfiguredReminderWindowOpenChanged: {
     if (root.ready) Qt.callLater(function() { root.observe(Date.now()) })
   }
 
@@ -465,6 +525,7 @@ Item {
   }
 
   Component.onCompleted: {
+    root.refreshLocalTime(localClock.date)
     if (root.sessionPath === "")
       Qt.callLater(function() { root.initializeFromSnapshot("", "unavailable") })
   }

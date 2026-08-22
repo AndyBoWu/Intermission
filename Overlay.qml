@@ -31,7 +31,11 @@ Item {
   readonly property var state: service && service.ready
     ? service.publicState
     : ({ phase: "stopped", breakKind: "short", cycleIndex: 0, remainingSeconds: 0, paused: false })
-  readonly property var presentation: BreakView.presentation(state.breakKind, state.cycleIndex)
+  readonly property var presentation: BreakView.presentation(
+    state.breakKind,
+    state.cycleIndex,
+    service ? service.configuration : ({})
+  )
   readonly property int totalSeconds: BreakView.totalSeconds(
     state.breakKind,
     service ? service.settings : ({})

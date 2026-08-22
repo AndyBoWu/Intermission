@@ -41,6 +41,30 @@ test("the default cadence rotates guidance across three short breaks and one lon
   assert(BreakView.presentation("long", 2).instruction.length < 80);
 });
 
+test("configured guidance can include, exclude, and order custom items", () => {
+  const configuration = {
+    routineOrder: ["hydrate", "custom-breathe", "eyes"],
+    customBreakItems: [{
+      id: "custom-breathe",
+      label: "Breathe",
+      instruction: "Slow down and take three calm breaths."
+    }]
+  };
+
+  assertEqual(BreakView.presentation("short", 0, configuration).key, "hydrate");
+  assertEqual(BreakView.presentation("short", 1, configuration).key, "custom-breathe");
+  assertEqual(BreakView.presentation("short", 1, configuration).title, "Breathe");
+  assertEqual(BreakView.presentation("short", 1, configuration).instruction,
+    "Slow down and take three calm breaths.");
+  assertEqual(BreakView.presentation("long", 2, configuration).key, "eyes");
+});
+
+test("invalid or empty configured guidance falls back to the safe defaults", () => {
+  const invalid = { routineOrder: ["unknown"], customBreakItems: [] };
+  assertEqual(BreakView.presentation("short", 0, invalid).key, "eyes");
+  assertEqual(BreakView.presentation("long", 3, invalid).key, "hydrate");
+});
+
 test("break overlay follows the focused screen on every open", () => {
   const screens = ["DP-1", "HDMI-A-1"];
   assertEqual(BreakView.focusScreenName(screens, "DP-1", "HDMI-A-1", true), "HDMI-A-1");

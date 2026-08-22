@@ -15,5 +15,23 @@
   "escapeHoldSeconds": 3,
   "reducedMotion": false,
   "contextDeferralEnabled": true,
-  "busyAppIds": ""
+  "busyAppIds": "",
+  "routineOrder": [
+    "eyes",
+    "stand",
+    "stretch",
+    "hydrate"
+  ],
+  "customBreakItems": [],
+  "workdayHoursEnabled": false,
+  "endOfDayPromptEnabled": false,
+  "workdayHoursByDay": {
+    "sun": "off",
+    "mon": "09:00-17:00",
+    "tue": "09:00-17:00",
+    "wed": "09:00-17:00",
+    "thu": "09:00-17:00",
+    "fri": "09:00-17:00",
+    "sat": "off"
+  }
 }
