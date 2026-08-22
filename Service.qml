@@ -23,6 +23,7 @@ Item {
   property double displayNowEpochMs: 0
   property var lastEffects: []
   property var lastError: null
+  property bool overlayOpen: false
   property bool ready: false
   property bool initialized: false
 
@@ -187,7 +188,7 @@ Item {
         breakKind: projected.breakKind,
         cycleIndex: projected.cycleIndex,
         remainingSeconds: projected.remainingSeconds,
-        overlayOpen: false
+        overlayOpen: root.overlayOpen
       },
       error: error || null
     })

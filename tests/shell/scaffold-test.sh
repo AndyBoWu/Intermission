@@ -58,6 +58,7 @@ runtime_files=(
 )
 [[ ! -f $PROJECT_ROOT/Engine.js ]] || runtime_files+=("$PROJECT_ROOT/Engine.js")
 [[ ! -f $PROJECT_ROOT/Settings.js ]] || runtime_files+=("$PROJECT_ROOT/Settings.js")
+[[ ! -f $PROJECT_ROOT/BreakViewModel.js ]] || runtime_files+=("$PROJECT_ROOT/BreakViewModel.js")
 [[ ! -f $PROJECT_ROOT/Panel.qml ]] || runtime_files+=("$PROJECT_ROOT/Panel.qml")
 
 if grep -Eni '(^|[^[:alnum:]_])(sudo|systemctl|curl|wget)([^[:alnum:]_]|$)|https?://|execDetached|Process[[:space:]]*\{' "${runtime_files[@]}"; then
@@ -88,5 +89,18 @@ grep -Eq 'function stableIpcError\(error\)' "$PROJECT_ROOT/Service.qml" \
   || fail "service IPC must normalize internal errors"
 grep -Eq 'function showPanel\(payloadJson: string\)' "$PROJECT_ROOT/Service.qml" \
   || fail "service IPC must expose showPanel"
+
+grep -Eq 'model:[[:space:]]*root\.opened[[:space:]]*\?[[:space:]]*Quickshell\.screens' "$PROJECT_ROOT/Overlay.qml" \
+  || fail "overlay must create one surface per current screen"
+grep -Eq 'PanelWindow[[:space:]]*\{' "$PROJECT_ROOT/Overlay.qml" \
+  || fail "overlay must use a layer-shell window per screen"
+grep -Eq 'WlrKeyboardFocus\.Exclusive' "$PROJECT_ROOT/Overlay.qml" \
+  || fail "overlay must expose its keyboard controls"
+grep -Eq 'Keys\.onEscapePressed:[[:space:]]*root\.requestClose' "$PROJECT_ROOT/Overlay.qml" \
+  || fail "overlay must provide the safety keyboard path"
+grep -Eq 'root\.service\.completeBreak\("overlay"\)' "$PROJECT_ROOT/Overlay.qml" \
+  || fail "overlay completion must route through the service"
+grep -Eq 'root\.shell\.hide\(root\.moduleName\)' "$PROJECT_ROOT/Overlay.qml" \
+  || fail "overlay close must clear shell loader state"
 
 echo "ok - scaffold contract"
