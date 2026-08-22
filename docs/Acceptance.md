@@ -1,0 +1,111 @@
+# Acceptance Guide
+
+This guide separates checks that work in any development checkout from checks
+that require a real Omarchy and Wayland session.
+
+## 1. Checkout checks
+
+Requirements: Node.js, npm, Bash, jq, and an Omarchy source checkout exposed
+through `OMARCHY_PATH`. In the shared development workspace, the shell check
+also discovers a sibling `omarchy-core` checkout.
+
+```sh
+npm test
+npm run test:shell
+```
+
+The unit command runs dependency-free JavaScript tests. The shell command
+validates the root manifest, required files, entry points, single-instance bar
+metadata, required lifecycle declarations, symlink policy, and prohibited
+runtime dependencies. Behavioral lifecycle coverage belongs to the live test.
+
+## 2. QML lint
+
+Run this in an Omarchy development environment that includes `qmllint`:
+
+```sh
+OMARCHY_PATH=/path/to/omarchy npm run lint:qml
+```
+
+The command checks every root QML entry point against the real Omarchy shell
+imports. A missing `qmllint` or shell checkout is a failure with an actionable
+message, not a silent skip.
+
+## 3. Live setup
+
+Use a disposable user session or back up the current shell configuration.
+Install and enable the current checkout through the ordinary plugin workflow,
+then verify it appears in the shell:
+
+```sh
+omarchy plugin add git@github.com:AndyBoWu/Intermission.git --enable --yes
+omarchy-shell shell listPlugins
+npm run test:live
+```
+
+`test:live` is intentionally non-installing. It requires the plugin to be
+present and enabled, summons the overlay entry, waits for its loader-owned
+state to become open, hides it, waits for closed, and always attempts cleanup
+if the command fails. It verifies shell lifecycle and IPC routing, not visible
+pixels; rendered overlay coverage begins with #7.
+
+## 4. Scenario matrix
+
+Record the commit SHA, Omarchy version, monitor layout, and result for each
+scenario. Tickets add automation where practical; compositor-only behavior
+remains a live acceptance check.
+
+| Scenario | Procedure | Expected result | Owner ticket |
+| --- | --- | --- | --- |
+| Discovery | Rescan, list, enable, disable, and re-enable | One namespaced plugin; no duplicate widget or shell error | #1 / #3 |
+| Bar lifecycle | Click, summon panel when available, press Escape, use shell hide | One responsive widget per bar; close paths agree | #6 |
+| Idle boundary | Cross just below and just above the configured idle threshold | Active time pauses; only qualifying idle becomes a natural break | #5 |
+| Warning | Accelerate the work target and enter warning | Start, defer, and skip are keyboard and pointer accessible | #4 / #6 |
+| Short break | Start a short break with accelerated settings | Correct instruction and countdown; completion advances cadence | #7 / #9 |
+| Long break | Complete the configured short-cycle count | Long routine and duration replace the short routine | #9 |
+| Emergency exit | Hold Escape for the configured duration | Every overlay closes within one second and state remains recoverable | #8 |
+| Shell restart | Restart during active, warning, deferred, break, and paused phases | Recovery follows the version 1 contract with no surprise overlay | #8 |
+| Suspend and resume | Suspend in active and break phases | Downtime is never counted as active; stale UI is removed | #5 / #8 |
+| Display connect | Add a display before and during a break | Exactly one synchronized surface appears on each display | #7 / #8 |
+| Display disconnect | Remove a display during a break | Removed surface disappears; remaining surfaces keep working | #7 / #8 |
+| Theme and scale | Change theme and test common scale factors | Content stays readable and unclipped | #7 / #10 |
+| Plugin disable | Disable while the panel or overlay is open | All UI and exclusive focus disappear immediately | #8 / #10 |
+
+## 5. Visual evidence
+
+Capture evidence only after the scenario passes.
+
+1. Use a clean desktop with no private notifications, filenames, or terminal
+   output visible.
+2. Capture the bar's normal, warning, and paused states at native scale.
+3. Capture short and long break surfaces on one display.
+4. Capture one multi-display break showing synchronized content.
+5. Repeat the break capture with reduced motion and a second Omarchy theme.
+6. Save stills with `omarchy capture screenshot fullscreen save`, or start and
+   stop the standard recorder with `Alt + Print Screen`.
+7. Review every asset for clipping, unreadable contrast, private data, and
+   copied brand material before adding it to the repository.
+
+Use this evidence record in the implementing issue or PR:
+
+```text
+Commit:
+Omarchy version:
+Monitor layout and scale:
+Scenario:
+Expected:
+Observed:
+Evidence file:
+Result: PASS / FAIL
+```
+
+## 6. Release check
+
+The release candidate is not complete until these commands pass in an Omarchy
+development environment and every applicable M0–M2 scenario has recorded
+evidence:
+
+```sh
+npm run check
+npm run test:live
+```

@@ -19,4 +19,8 @@ Item {
   function close() {
     root.opened = false
   }
+
+  function status() {
+    return root.opened ? "open" : "closed"
+  }
 }

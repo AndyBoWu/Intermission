@@ -1,0 +1,13 @@
+{
+  "name": "intermission",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Verification commands for the Intermission Omarchy plugin.",
+  "scripts": {
+    "test": "node tests/unit/run.js",
+    "test:shell": "bash tests/shell/scaffold-test.sh",
+    "test:live": "bash tests/shell/live-lifecycle-test.sh",
+    "lint:qml": "bash tests/qml-lint.sh",
+    "check": "npm run test && npm run test:shell && npm run lint:qml"
+  }
+}
