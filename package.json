@@ -15,7 +15,7 @@
     "test:release": "bash tests/shell/release-assets-test.sh",
     "test:compatibility": "bash tests/compatibility-checks.sh",
     "audit:release": "bash tests/release-audit.sh",
-    "check:portable": "npm test && npm run test:static && npm run test:shell && npm run audit:release && npm run test:release",
+    "check:portable": "npm test && npm run test:static && npm run audit:release && npm run test:release",
     "check": "npm run check:portable && npm run lint:qml"
   }
 }

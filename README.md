@@ -213,7 +213,6 @@ The portable local and static checks are:
 ```sh
 npm test
 npm run test:static
-npm run test:shell
 npm run audit:release
 npm run lint:workflows
 ```
@@ -228,6 +227,7 @@ The remaining checks require an Omarchy/Quickshell development environment:
 
 ```sh
 npm run lint:qml
+npm run test:shell
 npm run test:compatibility
 npm run test:live
 ```
