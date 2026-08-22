@@ -127,6 +127,11 @@ Phase-specific recovery is evaluated before natural-break recovery. Only an
 | Active break whose end passed | Complete it without reopening the overlay and begin a fresh work interval |
 | Paused snapshot | Remain paused until an explicit resume |
 
+An `idle` snapshot with `activeElapsedMs` equal to zero represents a natural
+break that was already satisfied while the user remained away. Recovery keeps
+that state idle without advancing the cadence again; activity must return
+before another natural break can be earned.
+
 ## 4. History contract
 
 History is reserved now so M3 can add insights without changing the runtime

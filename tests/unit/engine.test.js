@@ -272,6 +272,25 @@ test("qualifying restore downtime becomes a natural break", () => {
   assertEqual(restored.effects[0].type, "break-natural");
 });
 
+test("qualifying idle restore remains idle until activity returns", () => {
+  const options = settings({ naturalBreakSeconds: 120 });
+  const idle = Engine.transition(started(0, options), { type: "enterIdle" }, 10 * SECOND, options).state;
+  idle.savedAtEpochMs = 20 * SECOND;
+
+  const restored = Engine.restoreState(idle, 140 * SECOND, options);
+  assert(restored.ok);
+  assertEqual(restored.state.phase, "idle");
+  assertEqual(restored.state.activeElapsedMs, 0);
+  assertEqual(restored.state.cycleIndex, 1);
+  assertEqual(restored.effects[0].type, "break-natural");
+
+  const restartedAgain = Engine.restoreState(restored.state, 270 * SECOND, options);
+  assert(restartedAgain.ok);
+  assertEqual(restartedAgain.state.phase, "idle");
+  assertEqual(restartedAgain.state.cycleIndex, 1);
+  assertEqual(restartedAgain.effects.length, 0);
+});
+
 test("overdue warning restores as a warning instead of opening a break", () => {
   const options = settings();
   const warning = atWarning(options);

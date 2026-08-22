@@ -62,4 +62,13 @@ if grep -Eni '(^|[^[:alnum:]_])(sudo|systemctl|curl|wget)([^[:alnum:]_]|$)|https
   fail "runtime scaffold contains a prohibited dependency"
 fi
 
+grep -Eq 'IdleMonitor[[:space:]]*\{' "$PROJECT_ROOT/Service.qml" \
+  || fail "service must use the compositor idle monitor"
+grep -Eq 'respectInhibitors:[[:space:]]*true' "$PROJECT_ROOT/Service.qml" \
+  || fail "idle monitoring must respect inhibitors"
+grep -Eq 'Engine\.activitySignal' "$PROJECT_ROOT/Service.qml" \
+  || fail "service must route idle signals through the pure engine"
+grep -Eq 'Engine\.heartbeat' "$PROJECT_ROOT/Service.qml" \
+  || fail "service must route timer gaps through the pure engine"
+
 echo "ok - scaffold contract"
