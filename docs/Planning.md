@@ -374,7 +374,7 @@ deterministic short-break schedule; idle time is handled correctly.
 Goal: add the behavior-changing break experience and reach a safe,
 demonstrable release candidate.
 
-- [ ] [#7 — Build the multi-monitor break overlay](https://github.com/AndyBoWu/Intermission/issues/7)
+- [x] [#7 — Build the multi-monitor break overlay](https://github.com/AndyBoWu/Intermission/issues/7)
 - [ ] [#8 — Add safe enforcement and lifecycle recovery](https://github.com/AndyBoWu/Intermission/issues/8)
 - [ ] [#9 — Add dual-cadence break routines](https://github.com/AndyBoWu/Intermission/issues/9)
 - [ ] [#10 — Finalize accessibility, documentation, and release evidence](https://github.com/AndyBoWu/Intermission/issues/10)
