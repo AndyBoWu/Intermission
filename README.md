@@ -19,6 +19,11 @@ omarchy plugin add https://github.com/AndyBoWu/Intermission.git --enable
 
 SSH: `omarchy plugin add git@github.com:AndyBoWu/Intermission.git --enable`
 
+## Requirements
+
+- Omarchy Quattro.
+- No additional runtime packages, accounts, telemetry, remote services, or privileged setup.
+
 ## Use
 
 - Start, pause, resume, defer, skip, or end breaks from the bar control panel.
@@ -47,6 +52,18 @@ No telemetry or remote service calls.
 
 History is bounded (30 days max, 2,000 events, 1 MiB) and contains no app IDs or
 raw activity timelines.
+
+## Remove
+
+```sh
+omarchy plugin remove io.github.andybowu.intermission
+```
+
+Removing the plugin does not delete its optional local state. To remove that data too:
+
+```sh
+rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/intermission"
+```
 
 ## Verify
 
