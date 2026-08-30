@@ -56,31 +56,29 @@ than maintaining a permanently empty check.
 ## Repository settings and public-launch runbook
 
 Some controls cannot be expressed in tracked files. The repository owner keeps
-the default workflow token permission read-only, requires approval before fork
-pull-request workflows run, and requires actions to be pinned to a full-length
-commit SHA. These settings are active. The checks above are prepared in the
-tracked main-branch ruleset, but GitHub cannot enforce that ruleset while this
-private repository is on the Free plan. Require a CODEOWNERS review for
-automation changes when more than one maintainer can approve pull requests.
+the default workflow token permission read-only and requires actions to be
+pinned to a full-length commit SHA. These settings and the tracked main-branch
+ruleset are active. Public fork pull requests run with read-only permissions and
+without repository secrets. Require a CODEOWNERS review for automation changes
+when more than one maintainer can approve pull requests.
 
 The exact protected-main, Actions allowlist, token, merge, and bypass settings
 are defined and reviewed in [Repository Governance](Governance.md). Run
 `npm run governance:verify` with an authenticated GitHub CLI to detect drift.
 
-The repository is private on an account where CodeQL code scanning is not
-currently available. The committed CodeQL job therefore checks repository
-visibility and remains skipped while private. It automatically analyzes both
-`actions` and `javascript-typescript` with `security-extended` on pull requests,
-main, a weekly schedule, and manual runs after the repository is public.
+The public repository automatically analyzes both `actions` and
+`javascript-typescript` with `security-extended` on pull requests, `main`, a
+weekly schedule, and manual runs.
 
-At public launch, as a separate owner decision:
+After public launch:
 
-1. Make the intended visibility change and confirm the CodeQL jobs complete.
+1. Confirm the CodeQL jobs complete.
 2. In **Settings → Advanced Security**, enable secret scanning and push
    protection, then verify both controls report enabled.
 3. Run `CodeQL` and `Security` manually and review the repository Security tab.
-4. Add both CodeQL matrix checks to the main-branch ruleset after their first
-   successful run.
+4. Evaluate both CodeQL matrix checks for the main-branch ruleset after their
+   safe-fork behavior is proven. The four current required checks remain the
+   enforceable baseline.
 
 Do not change repository visibility merely to exercise these controls. Record
 the settings evidence in the launch pull request or release evidence when the

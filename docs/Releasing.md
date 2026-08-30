@@ -52,6 +52,13 @@ reviewer. The publishing job reads back that protection rule and fails before an
 release write if it is missing. Plan or visibility changes remain separate owner
 decisions.
 
+`bash scripts/github-governance.sh apply` configures `AndyBoWu` as the required
+reviewer and allows self-review so a solo-maintainer release does not deadlock.
+`npm run governance:verify` reads the environment and reviewer rule back without
+changing it. GitHub administrators may still use the platform's separately
+audited environment-bypass control; doing so requires the emergency record
+described in `CONTRIBUTING.md`.
+
 Add GitHub artifact attestations with the official attestation action, using only
 `id-token: write` and `attestations: write` permissions, when your account plan
 and policy allow it.

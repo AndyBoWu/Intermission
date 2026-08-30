@@ -1,9 +1,8 @@
 # Contributing
 
 Intermission uses a pull-request-only `main` policy. Work on a topic branch and
-keep each pull request focused enough to review and revert safely. GitHub's
-current private Free plan cannot enforce the prepared branch ruleset, so the
-maintainer must follow this policy manually until the plan supports it.
+keep each pull request focused enough to review and revert safely. The active
+`Protect main` ruleset enforces this path.
 
 ## Before opening a pull request
 
@@ -29,9 +28,8 @@ resolved, and these stable checks must pass:
 - `Compatibility / Pinned baseline`
 - `Security / Workflow policy`
 
-For a private-repository fork, a maintainer must approve the workflow run.
-Approved fork runs receive a read-only token and no repository secrets or
-variables, so the same stable checks can complete without elevating the fork.
+Public fork runs receive a read-only token and no repository secrets, so the
+same stable checks can complete without elevating the fork.
 
 No approval count is required while the repository has one maintainer; a
 self-approval would not provide independent review and would make the project
@@ -40,15 +38,13 @@ and becomes an enforceable reviewer boundary if another maintainer is added.
 
 Use squash merge. Merge commits and rebase merges are disabled so `main` stays
 linear and every merged commit points back to its pull request. Do not force
-push to or delete `main`; the current plan cannot enforce those two controls.
+push to or delete `main`; the active ruleset blocks those operations.
 
 ## Emergency bypass
 
-The prepared ruleset gives only AndyBoWu bypass access, and only through a pull
-request. That bypass is not active while the ruleset is plan-blocked. Until it
-can be enabled, use the same documented emergency process solely when a
-required check is unavailable or a time-critical safety/security correction
-cannot wait for the normal gate.
+The ruleset gives only AndyBoWu bypass access, and only through a pull request.
+Use that path solely when a required check is unavailable or a time-critical
+safety/security correction cannot wait for the normal gate.
 
 Before bypassing, record the failed or unavailable control and the reason in
 the pull request. Afterward, rerun every skipped check, link the results, and

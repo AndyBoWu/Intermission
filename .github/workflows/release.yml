@@ -114,6 +114,9 @@ jobs:
       - compatibility
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    environment:
+      name: release
+      url: ${{ steps.publish.outputs.url }}
     permissions:
       actions: read
       contents: write
@@ -140,6 +143,17 @@ jobs:
           git show-ref --verify --quiet refs/remotes/origin/main
           git merge-base --is-ancestor "$tag_commit" refs/remotes/origin/main
           bash scripts/release-assets.sh verify "$RELEASE_TAG" dist "$source_commit"
+
+      - name: Require a protected release environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$GITHUB_REPOSITORY/environments/release" \
+            --jq '[.protection_rules[] | select(.type == "required_reviewers")] | length >= 1' \
+            | grep -qx true
 
       - name: Reject a duplicate release
         env:

@@ -7,6 +7,8 @@ PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 REPOSITORY='AndyBoWu/Intermission'
 RULESET_NAME='Protect main'
 RULESET_PATH="$PROJECT_ROOT/.github/rulesets/main.json"
+RELEASE_ENVIRONMENT='release'
+OWNER_ID=5258417
 API_VERSION='2026-03-10'
 RULESET_PLAN_ERROR='Upgrade to GitHub Pro or make this repository public'
 
@@ -65,7 +67,9 @@ find_ruleset_id() {
 }
 
 apply_settings() {
-  local ruleset_id ruleset_status
+  local repository_json ruleset_id ruleset_status
+
+  repository_json=$(api "repos/$REPOSITORY")
 
   jq -n '{
     enabled: true,
@@ -86,14 +90,24 @@ apply_settings() {
   }' | api --method PUT \
     "repos/$REPOSITORY/actions/permissions/workflow" --input - >/dev/null
 
-  jq -n '{
-    run_workflows_from_fork_pull_requests: true,
-    send_write_tokens_to_workflows: false,
-    send_secrets_and_variables: false,
-    require_approval_for_fork_pr_workflows: true
+  if jq -e '.private == true' <<< "$repository_json" >/dev/null; then
+    jq -n '{
+      run_workflows_from_fork_pull_requests: true,
+      send_write_tokens_to_workflows: false,
+      send_secrets_and_variables: false,
+      require_approval_for_fork_pr_workflows: true
+    }' | api --method PUT \
+      "repos/$REPOSITORY/actions/permissions/fork-pr-workflows-private-repos" \
+      --input - >/dev/null
+  fi
+
+  jq -n --argjson owner_id "$OWNER_ID" '{
+    wait_timer: 0,
+    prevent_self_review: false,
+    reviewers: [{ type: "User", id: $owner_id }],
+    deployment_branch_policy: null
   }' | api --method PUT \
-    "repos/$REPOSITORY/actions/permissions/fork-pr-workflows-private-repos" \
-    --input - >/dev/null
+    "repos/$REPOSITORY/environments/$RELEASE_ENVIRONMENT" --input - >/dev/null
 
   api --method PATCH "repos/$REPOSITORY" \
     -F allow_auto_merge=false \
@@ -126,7 +140,7 @@ apply_settings() {
 }
 
 verify_settings() {
-  local actions_json fork_json merge_json ruleset_id ruleset_json selected_json workflow_json
+  local actions_json environment_json fork_json merge_json ruleset_id ruleset_json selected_json workflow_json
 
   merge_json=$(api "repos/$REPOSITORY")
   jq -e '
@@ -162,14 +176,30 @@ verify_settings() {
   ' <<< "$workflow_json" >/dev/null || fail "default workflow permissions drifted"
   echo "ok - read-only default workflow token"
 
-  fork_json=$(api "repos/$REPOSITORY/actions/permissions/fork-pr-workflows-private-repos")
-  jq -e '
-    .run_workflows_from_fork_pull_requests == true and
-    .send_write_tokens_to_workflows == false and
-    .send_secrets_and_variables == false and
-    .require_approval_for_fork_pr_workflows == true
-  ' <<< "$fork_json" >/dev/null || fail "private fork workflow policy drifted"
-  echo "ok - approved read-only private fork workflows"
+  if jq -e '.private == true' <<< "$merge_json" >/dev/null; then
+    fork_json=$(api "repos/$REPOSITORY/actions/permissions/fork-pr-workflows-private-repos")
+    jq -e '
+      .run_workflows_from_fork_pull_requests == true and
+      .send_write_tokens_to_workflows == false and
+      .send_secrets_and_variables == false and
+      .require_approval_for_fork_pr_workflows == true
+    ' <<< "$fork_json" >/dev/null || fail "private fork workflow policy drifted"
+    echo "ok - approved read-only private fork workflows"
+  else
+    echo "ok - public fork pull requests use the public token model"
+  fi
+
+  environment_json=$(api "repos/$REPOSITORY/environments/$RELEASE_ENVIRONMENT")
+  jq -e --argjson owner_id "$OWNER_ID" '
+    .name == "release" and
+    ([.protection_rules[] | select(.type == "required_reviewers")][0] as $rule |
+      $rule != null and
+      $rule.prevent_self_review == false and
+      any($rule.reviewers[]?;
+        .type == "User" and .reviewer.id == $owner_id))
+  ' <<< "$environment_json" >/dev/null \
+    || fail "release environment reviewer protection drifted"
+  echo "ok - protected release environment"
 
   if ruleset_id=$(find_ruleset_id); then
     :
