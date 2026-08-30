@@ -16,13 +16,25 @@ done
 
 for required_path in \
   manifest.json README.md LICENSE preview.png \
-  scripts/release-assets.sh scripts/release-files.txt docs/Releasing.md \
+  scripts/release-assets.sh scripts/release-files.txt \
+  scripts/github-governance.sh .github/rulesets/main.json \
+  .github/workflows/release.yml docs/Releasing.md \
   docs/ReleaseEvidence.md docs/MarketplaceChecklist.md \
   docs/previews/intermission-preview.svg \
   docs/previews/multi-display-preview.svg \
   docs/previews/multi-display-preview.png; do
   [[ -f $PROJECT_ROOT/$required_path ]] || fail "missing $required_path"
 done
+
+publish_job=$(sed -n '/^  publish:/,$p' "$PROJECT_ROOT/.github/workflows/release.yml")
+grep -q '^    environment:$' <<< "$publish_job" \
+  || fail "release publish job must use a protected environment"
+grep -q '^      name: release$' <<< "$publish_job" \
+  || fail "release publish job must bind the release environment"
+grep -q '^      - name: Require a protected release environment$' <<< "$publish_job" \
+  || fail "release publish job must read back environment protection"
+grep -q 'required_reviewers' <<< "$publish_job" \
+  || fail "release publish job must require a reviewer rule"
 
 jq -e '.schemaVersion == 1 and .id == "io.github.andybowu.intermission"' \
   "$PROJECT_ROOT/manifest.json" >/dev/null || fail "manifest identity is invalid"

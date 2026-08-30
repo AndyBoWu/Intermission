@@ -2,16 +2,15 @@
 
 Intermission is governed as a solo-maintainer repository without weakening the
 validation path. Repository-level Actions, token, fork, and merge settings are
-active and verified. The tracked `main` ruleset payload is
-`.github/rulesets/main.json`, and this is now applied on a public repository.
+active and verified. The tracked and applied `main` ruleset payload is
+`.github/rulesets/main.json`.
 
 Visibility and ruleset behavior are separate owner decisions. The current public
 repository keeps this ruleset payload and policy as-is.
 
 ## Protected main
 
-When the account supports private-repository rulesets, the prepared
-`Protect main` ruleset targets only `refs/heads/main` and requires:
+The active `Protect main` ruleset targets only `refs/heads/main` and requires:
 
 - changes through a pull request;
 - a branch tested against the latest `main`;
@@ -36,22 +35,21 @@ patterns are not allowed. Every `uses:` reference must be a full commit SHA.
 The default `GITHUB_TOKEN` permission is read-only, and workflows cannot approve
 pull requests.
 
-Private fork pull-request workflows may run only after maintainer approval.
-They receive neither write tokens nor repository secrets and variables. This
-keeps the required check names available to safe forks without trusting forked
-code with privileged repository context.
+Public fork pull-request workflows use GitHub's public-repository token model.
+The workflows run on `pull_request`, keep permissions read-only, and receive no
+repository secrets, so the required checks can run without granting forked code
+privileged repository context.
 
 The repository enables squash merge and the update-branch button. Merge commits,
 rebase merge, and auto-merge are disabled. Merged topic branches are deleted
-automatically. Until ruleset enforcement becomes available, the maintainer must
-apply the pull-request-only, no-force-push, and no-deletion policy manually.
+automatically. The active ruleset enforces the pull-request-only,
+no-force-push, and no-deletion policy.
 
 ## Bypass and audit
 
-The prepared ruleset's only bypass actor is GitHub user `AndyBoWu` (`5258417`),
+The ruleset's only bypass actor is GitHub user `AndyBoWu` (`5258417`),
 with `pull_request` mode. That mode preserves the pull request and its audit
-trail; there is no planned always-on or direct-push bypass. This ruleset bypass
-does not exist while the plan limitation applies.
+trail; there is no always-on or direct-push bypass.
 
 An emergency bypass must satisfy the recording and follow-up requirements in
 [Contributing](../CONTRIBUTING.md). Release publication, repository visibility,
@@ -74,8 +72,8 @@ Read back and verify every available mutable setting without changing it:
 npm run governance:verify
 ```
 
-When limitations are present, both commands report the reason in the evidence.
-Any other missing or drifted setting fails verification.
+The helper also configures and verifies the required-reviewer rule on the
+`release` environment. Any missing or drifted setting fails verification.
 
 Run the readback after any workflow/check-name, collaborator, fork-policy,
 merge-method, visibility, or plan change, and at least quarterly. Record
