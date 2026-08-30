@@ -1,6 +1,8 @@
 # Release Evidence
 
-Evidence date: 2026-08-22 (America/Los_Angeles)
+Target-session evidence date: 2026-08-22 (America/Los_Angeles)
+
+Portable evidence refreshed: 2026-08-30 (America/Los_Angeles)
 
 This report separates portable and automated compatibility evidence from checks
 that still require an installed plugin in an actual Omarchy/Wayland session. A
@@ -13,7 +15,7 @@ pending row is not represented as a pass.
 | Omarchy manifest validation | Pass | `npm run test:compatibility` invokes the validator from pinned Omarchy revision `eca89f9518a95fbb279fcf55567d4d6df38e6d2e` |
 | QML import/type lint | Pass | `npm run test:compatibility` resolves the real `qs.Ui` and `qs.Commons` modules and treats missing imports/types as errors |
 | Compatibility negative probes | Pass | a missing manifest entry point and broken QML import are both rejected |
-| JavaScript unit suite | Pass | `npm test` (102/102) |
+| JavaScript unit suite | Pass | `npm test` (103/103) |
 | Static shell contract | Pass | `npm run test:shell` |
 | JavaScript syntax | Pass | `node --check` for every runtime and unit JavaScript file |
 | Shell syntax and lint | Pass | `bash -n` and `shellcheck` for every test script |
@@ -91,7 +93,9 @@ analysis, not a security audit.
 
 ## Release decision
 
-The repository is now public. The implementation may be reviewed and merged,
-but marketplace submission remains owner-gated until full M2 live validation is
-completed.
-pending target-session evidence is completed.
+The repository is public and the current plugin snapshot has passed marketplace
+compatibility validation and the automated security baseline in
+[`omacom/omarchy-plugin-marketplace#3598`](https://github.com/omacom/omarchy-plugin-marketplace/issues/3598).
+Marketplace maintainer approval remains pending. The open target-session rows
+above remain required before this repository describes the full M2 live matrix
+as complete or publishes another stable release under the current policy.
