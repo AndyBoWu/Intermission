@@ -29,10 +29,9 @@ checks.
 
 ## Updates and suppressions
 
-Dependabot checks the `github-actions` ecosystem each Monday, groups compatible
-updates into one pull request, and limits the open update backlog to three.
-New releases cool down for seven days before becoming eligible for an update.
-Before merging an update, review the upstream release notes and commit diff,
+Automated Dependabot version updates are disabled to keep maintenance work
+intentional during active product development. Review GitHub Actions updates
+manually; before merging one, review the upstream release notes and commit diff,
 retain the immutable SHA and version comment, and require the normal checks.
 
 Do not suppress a finding only to make a check green. A justified suppression
