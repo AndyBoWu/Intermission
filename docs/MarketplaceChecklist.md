@@ -1,7 +1,21 @@
 # Marketplace Checklist
 
-This is a preparation document, not a submission. Repository visibility and
-marketplace publication remain explicit owner decisions.
+This file records repository readiness and a local snapshot of the marketplace
+submission. The live marketplace issue is authoritative because labels,
+validation results, and approval state can change after this file is updated.
+
+## Submission record
+
+- Canonical repository: [`omacom/omarchy-plugin-marketplace`](https://github.com/omacom/omarchy-plugin-marketplace)
+- Canonical submission guide: [`SUBMISSION.md`](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/SUBMISSION.md)
+- Active request: [`omacom/omarchy-plugin-marketplace#3598`](https://github.com/omacom/omarchy-plugin-marketplace/issues/3598)
+- Superseded wrong-repository request: [`omacom/omarchy#7813`](https://github.com/omacom/omarchy/issues/7813)
+- Submitted: 2026-08-30
+- Validated commit: `12e353f3174c3fa7d34b3011ac2e9a6eafc4b899`
+- Last checked: 2026-08-30
+- Status at last check: open with `submission` and `validated` labels;
+  Quattro compatibility and the automated security baseline passed; awaiting
+  maintainer `approved-and-verified` approval before listing
 
 ## Repository readiness
 
@@ -17,9 +31,9 @@ marketplace publication remain explicit owner decisions.
 - [ ] Live single-display and multi-display acceptance matrix passes in an
   Omarchy/Wayland session
 - [x] Repository is public
-- [ ] Owner confirms the exact commit and preview ownership for submission
+- [x] Owner confirms the exact commit and preview ownership for submission
 
-## Proposed listing metadata
+## Submitted listing metadata
 
 - Title: `[Plugin]: Intermission`
 - Category: `Productivity`
@@ -28,10 +42,7 @@ marketplace publication remain explicit owner decisions.
 - Maintainer note: local-only break cadence; no account, telemetry, remote
   service, extra runtime package, or privileged setup
 
-## Submission body draft
-
-Do not submit this body until every checkbox statement is true and the owner
-has approved publication.
+## Submitted body
 
 ```markdown
 ### Repository URL
@@ -55,27 +66,33 @@ _No response_
 Local-only break cadence with no account, telemetry, remote service, extra
 runtime package, or privileged setup.
 
+Supersedes https://github.com/omacom/omarchy/issues/7813, which was opened in
+the wrong repository.
+
 ### Submission checklist
 
 - [x] The repository is public and contains installation and removal instructions.
 - [x] I have documented the plugin license and any external dependencies.
-- [ ] I confirm that I own or have permission to submit this plugin and its preview assets.
+- [x] I confirm that I own or have permission to submit this plugin and its preview assets.
 - [x] The plugin does not overwrite user configuration without explicit consent.
 - [x] I understand that approval is for listing and is not a security review.
 ```
 
-## Owner gate
+## Submission safeguards
 
-Before submission:
+For any future listing or verification request:
 
-1. finish the real Omarchy live matrix and replace pending evidence;
-2. confirm public visibility and exact install/remove links;
-3. confirm the exact commit reached protected `main` through the documented
-   pull-request and required-check path;
-4. review that commit and confirm ownership of code and preview assets;
-5. rerun marketplace compatibility and static security checks on that commit;
-6. show the final title and body to the owner for explicit approval;
-7. only then create the marketplace issue.
-
-Visibility is now public. The next step is only owner-approved creation
-of the Omarchy marketplace issue.
+1. read the current canonical marketplace submission guide;
+2. resolve and verify the exact target repository and issue form instead of
+   inferring them from the Omarchy product repository;
+3. finish the relevant real Omarchy acceptance matrix and update release
+   evidence;
+4. confirm public visibility, install/remove links, the exact protected `main`
+   commit, and ownership of code and preview assets;
+5. show the exact final title, body, and every attestation to the owner for
+   explicit approval;
+6. create the request only in the verified target repository;
+7. read the request back immediately and confirm that the expected submission
+   label, compatibility report, and security-baseline report appear;
+8. update the submission record above while treating the live issue as the
+   authoritative status.
